@@ -35,12 +35,7 @@ def getDBConfigs(filename='DBConfig.ini', section='postgresql'):
     return db
 
 
-@app.route('/')
-def hello_world():
-    return 'Hello World!'
-
-
-@app.route('/user/<username>,<email>,<password>', methods=['GET'])
+@app.route('/user/<username>,<email>,<password>', methods=['POST'])
 def register(username, email, password):
     conn = None
 
@@ -58,8 +53,8 @@ def register(username, email, password):
         cur.execute("Select userid from pessoa where username=%s and password=%s", (username, password))
         id = cur.fetchall()
         cur.execute("commit")
-        message = {"userId": id[0]}
-
+        message = {"userId": id[0][0]}
+        return message
 
     except (Exception, psycopg2.DatabaseError) as error:
         if isinstance(error, psycopg2.errors.UniqueViolation):
@@ -106,7 +101,7 @@ def login(username, password):
             print('Database connection closed.')
 
 
-@app.route('/leilao/<artigoId>', methods=['GET'])
+@app.route('/leilao/<artigoId>', methods=['GET'])  # falta acabar
 def criarLeilao(artigoId):
     # Copiar isto para saber se o user tem token ou nao
     l, code = token_required(request.args.get('token'))
@@ -115,6 +110,84 @@ def criarLeilao(artigoId):
     else:
         user = l['user']
     # fazer o resto aqui
+
+
+@app.route('/leiloes', methods=['GET'])  # falta testar isto
+def listarLeiloes():
+    # Copiar isto para saber se o user tem token ou nao
+    l, code = token_required(request.args.get('token'))
+    if code == 403:
+        return l
+    else:
+        conn = None
+        try:
+            params = getDBConfigs()
+
+            # connect to the PostgreSQL server
+            conn = psycopg2.connect(**params)  # creates connection with the data base
+
+            # create a cursor ( a cursor is the command that "talks" with the database")
+            cur = conn.cursor()
+            cur.execute("Select leilaoid,descricao from leilao")
+            leiloes = cur.fetchall()
+            lista = []
+            for leilao in leiloes:
+                message = {"leilaoId": leilao[0], "descricao": leilao[1]}
+                lista.append(message)
+            return jsonify(lista)
+
+        except (Exception, psycopg2.DatabaseError) as error:
+            print(error)
+
+        finally:
+            if conn is not None:
+                conn.close()
+                print('Database connection closed.')
+
+
+@app.route('/atividade', methods=['GET'])  # falta testar isto
+def listarAtividade():
+    # Copiar isto para saber se o user tem token ou nao
+    l, code = token_required(request.args.get('token'))
+    if code == 403:
+        return l
+    else:
+        conn = None
+        user = l['user']
+        try:
+            params = getDBConfigs()
+
+            # connect to the PostgreSQL server
+            conn = psycopg2.connect(**params)  # creates connection with the data base
+
+            # create a cursor ( a cursor is the command that "talks" with the database")
+            cur = conn.cursor()
+            cur.execute("begin transaction")
+            cur.execute("Select userid from pessoa where username=%s", (user, ))
+            id = cur.fetchall()[0]
+            cur.execute("Select leilaoid,descricao from leilao where pessoa_userid = %s", id) # obter leiloes onde o user e o criador
+            leiloes = cur.fetchall()
+            lista = []
+            for leilao in leiloes:
+                message = {"leilaoId": leilao[0], "descricao": leilao[1], "role": "Criador"}
+                lista.append(message)
+            cur.execute("Select leilao_leilaoid from licitacao where pessoa_userid = %s", id)
+            licitacoes = cur.fetchall()
+            for licitacao in licitacoes:
+                cur.execute("Select leilaoid,descricao from leilao where leilaoid = %s", licitacao)
+                leilao = cur.fetchall()
+                message = {"leilaoId": leilao[0], "descricao": leilao[1], "role": "Licitador"}
+                lista.append(message)
+
+            return jsonify(lista)
+
+        except (Exception, psycopg2.DatabaseError) as error:
+            print(error)
+
+        finally:
+            if conn is not None:
+                conn.close()
+                print('Database connection closed.')
 
 
 if __name__ == '__main__':
