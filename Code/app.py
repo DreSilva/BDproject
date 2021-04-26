@@ -35,11 +35,14 @@ def getDBConfigs(filename='DBConfig.ini', section='postgresql'):
     return db
 
 
-@app.route('/user/<username>,<email>,<password>', methods=['POST'])
-def register(username, email, password):
+@app.route('/user', methods=['POST'])
+def register():
     conn = None
 
     try:
+        username = request.form['username']
+        password = request.form['password']
+        email = request.form['email']
         params = getDBConfigs()
 
         # connect to the PostgreSQL server
@@ -67,10 +70,12 @@ def register(username, email, password):
             print('Database connection closed.')
 
 
-@app.route('/user/<username>,<password>', methods=['PUT'])
-def login(username, password):
+@app.route('/user', methods=['PUT'])
+def login():
     conn = None
     try:
+        username = request.form['username']
+        password = request.form['password']
         params = getDBConfigs()
 
         # connect to the PostgreSQL server
