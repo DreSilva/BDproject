@@ -106,15 +106,52 @@ def login():
             print('Database connection closed.')
 
 
-@app.route('/leilao/<artigoId>', methods=['GET'])  # falta acabar
-def criarLeilao(artigoId):
+@app.route('/leilao', methods=['GET'])  # falta acabar
+def criarLeilao():
     # Copiar isto para saber se o user tem token ou nao
     l, code = token_required(request.args.get('token'))
     if code == 403:
         return l
     else:
-        user = l['user']
-    # fazer o resto aqui
+        conn = None
+        try:
+            params = getDBConfigs()
+            conn = psycopg2.connect(**params)
+            cur = conn.cursor()
+
+            #obter o userId
+            username = l['user']#usar para ir buscar os userid
+            #cur.execute("Select * from pessoa where username = %s", (username))
+            cur.execute("Select * from pessoa where username=%s", (username,))
+            user_stats = cur.fetchall()
+
+            userId = user_stats[0][0]
+            artigoId = request.form['artigoId']
+            precoMinimo = request.form['precoMinimo']
+            titulo = request.form['titulo']
+            descricao = request.form['descricao']
+            dataFim = request.form['dataFim']#data no formato yyyy-mm-dd h:min
+            dataInicio = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+
+            #agora temos toda a informacao para criar o leilao
+            cur.execute("begin")
+            cur.execute("Insert into leilao(artigoId, precominimo, titulo, descricao, datainicio, datafim, cancelado, pessoa_userid) values(%s, %s, %s, %s, %s, %s, false, %s)", (artigoId, precoMinimo, titulo, descricao, dataInicio, dataFim, userId))
+            cur.execute("select * from leilao where artigoid = %s", (artigoId))
+            leilaoId = cur.fetchall()[0][0]
+            cur.execute("commit")
+
+            message = {"leilaoId" : leilaoId}
+            return jsonify(message)
+        except(Exception, psycopg2.DatabaseError) as error:
+            if isinstance(error, psycopg2.errors.UniqueViolation):
+                message = {"Code": 409, "error": "artigo ja existe na base de dados."}
+                return jsonify(message)
+
+        finally:
+            if conn is not None:
+                conn.close()
+                print('Database connection closed.')
+        
 
 
 @app.route('/leiloes', methods=['GET'])  # falta testar isto
