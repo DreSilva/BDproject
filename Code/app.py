@@ -349,6 +349,60 @@ def editarLeilao(leilaoId):
                 print('Database connection closed.')
 
 
+@app.route('/licitacao', methods=['POST'])
+def criarLicitacao():
+    # Copiar isto para saber se o user tem token ou nao
+    l, code = token_required(request.args.get('token'))
+    if code == 403:
+        return l
+    else:
+        conn = None
+        try:
+            params = getDBConfigs()
+            conn = psycopg2.connect(**params)
+            cur = conn.cursor()
+
+            #obter o userId
+            username = l['user']#usar para ir buscar os userid
+            #cur.execute("Select * from pessoa where username = %s", (username))
+            cur.execute("Select * from pessoa where username=%s", (username,))
+            user_stats = cur.fetchall()
+
+
+            if user_stats[0][5]:
+                pessoa_userId = user_stats[0][0]
+                leilao_leilaoid = request.form['leilao_leilaoid']
+                valor = request.form['valor']
+
+                cur.execute("Select * from leilao where leilaoid=%s", (leilao_leilaoid))
+                leilao_stats = cur.fetchall()
+                if leilao_stats[0][5]:
+                    #agora temos toda a informacao para criar o licitação
+                    cur.execute("begin")
+                    cur.execute("Insert into licitacao( valor, valida, leilao_leilaoid, pessoa_userid) values( %s, true, %s, %s)", ( valor, leilao_leilaoid, pessoa_userId))
+                    cur.execute("select * from licitacao where leilao_leilaoid = %s and pessoa_user_id = %s order by valor DESC", (leilao_leilaoid,pessoa_userId))
+                    licitacaoId = cur.fetchall()[0][0]
+                    cur.execute("commit")
+
+                    message = {"licitacaoId" : licitacaoId}
+                    return jsonify(message)
+                else:
+                    message = {"Code": 403, "error": "o leilão já terminou"}
+                    return jsonify(message)
+            else:
+                message = {"Code": 403, "error": "o utilizador foi banido."}
+                return jsonify(message)
+
+        except(Exception, psycopg2.DatabaseError) as error:
+            if isinstance(error, psycopg2.errors.UniqueViolation):
+                message = {"Code": 409, "error": "artigo ja existe na base de dados."}
+                return jsonify(message)
+
+        finally:
+            if conn is not None:
+                conn.close()
+                print('Database connection closed.')
+
 
 if __name__ == '__main__':
     app.run(debug=True)
