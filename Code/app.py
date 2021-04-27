@@ -106,7 +106,7 @@ def login():
             print('Database connection closed.')
 
 
-@app.route('/leilao', methods=['GET'])  # falta acabar
+@app.route('/leilao', methods=['POST'])  # falta acabar
 def criarLeilao():
     # Copiar isto para saber se o user tem token ou nao
     l, code = token_required(request.args.get('token'))
@@ -136,7 +136,7 @@ def criarLeilao():
             #agora temos toda a informacao para criar o leilao
             cur.execute("begin")
             cur.execute("Insert into leilao(artigoId, precominimo, titulo, descricao, datainicio, datafim, cancelado, pessoa_userid) values(%s, %s, %s, %s, %s, %s, false, %s)", (artigoId, precoMinimo, titulo, descricao, dataInicio, dataFim, userId))
-            cur.execute("select * from leilao where artigoid = %s", (artigoId))
+            cur.execute("select * from leilao where artigoid = %s", (artigoId,))
             leilaoId = cur.fetchall()[0][0]
             cur.execute("commit")
 
