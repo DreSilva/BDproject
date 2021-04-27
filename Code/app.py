@@ -232,5 +232,123 @@ def listarAtividade():
                 print('Database connection closed.')
 
 
+@app.route('/leiloes/<keyword>', methods = ['GET'])
+def listarLeiloesKeyword(keyword):
+    #a keyword pode tanto ser uma descricao como um codigo EAN/ISBN
+    l, code = token_required(request.args.get('token'))
+    if code == 403:
+        return l
+    else:
+        conn = None
+        try:
+            params = getDBConfigs()
+            conn = psycopg2.connect(**params)
+            cur = conn.cursor()
+
+            try:#se for um numero tanto pode ser um artigoId como algo da descricao, logo pesquisa-se ambos.
+                int(keyword)
+                flag = 1
+            except(Exception) as error:#nao e um numero
+                flag = 0
+
+            cur.execute('begin')
+            if flag == 1:
+                cur.execute("select leilaoid, descricao from leilao where artigoid = %s or descricao = %s", (keyword, keyword))
+            else:
+                cur.execute("select leilaoid, descricao from leilao where descricao = %s", (keyword,))
+            leiloes = cur.fetchall()
+            cur.execute('commit')
+
+            lei_list = []
+            for leilao in leiloes:
+                message = {'leilaoId': leilao[0], 'descricao': leilao[1]}
+                lei_list.append(message)
+            
+            return jsonify(lei_list)
+
+        except(Exception, psycopg2.DatabaseError) as error:
+            print(error)
+        
+        finally:
+            if conn is not None:
+                conn.close()
+                print('Database connection closed.')
+
+
+@app.route('/leilao/<leilaoId>', methods = ['PUT'])
+def editarLeilao(leilaoId):
+    l, code = token_required(request.args.get('token'))
+    if code == 403:
+        return l
+    else:
+        conn = None
+        username = l['user']#para saber se este leilao e deste user
+        
+        try:
+            params = getDBConfigs()
+            conn = psycopg2.connect(**params)
+            cur = conn.cursor()
+
+            cur.execute("select userid from pessoa where username = %s", (username,))
+            userId = cur.fetchall()[0][0]
+
+            cur.execute("select pessoa_userid from leilao where leilaoid = %s", (leilaoId,))
+            pessoa_userId = cur.fetchall()[0][0]
+
+            if userId != pessoa_userId:#o user nao e o criador do leilao, logo nao o pode alterar
+                return jsonify({"erro": "nao e o criador do leilao."})
+
+            #assumo que algum deles possa ser uma string vazia
+            titulo = request.form['titulo']
+            descricao = request.form['descricao']
+
+            #se algum dos campos tiver conteudo, tem de ser registado (versao) o titulo e a descricao antiga
+            if titulo != "" or descricao != "":
+                cur.execute('begin')
+                #obter os valores atuais
+                cur.execute("select titulo, descricao from leilao where leilaoid = %s", (leilaoId,))
+                past_info = cur.fetchall()
+
+                #obter o ultimo numero de versao utilizado
+                cur.execute("select versao from versao where leilao_leilaoid = %s order by versao desc", (leilaoId))
+                aux = cur.fetchall()
+
+                if aux == []:
+                    last_version = 0
+                else:
+                    last_version = int(aux[0][0])
+
+                #criar registo na tabela versao
+                #so adiciona se o titulo ou descricao forem diferentes do que ja la estao
+                if past_info[0][0] != titulo and titulo != "" or past_info[0][1] != descricao and descricao != "":
+                    cur.execute("insert into versao (versao, titulo, descricao, leilao_leilaoid) values(%s, %s, %s, %s)", (str(last_version + 1), past_info[0][0], past_info[0][1], leilaoId))
+
+                #atualizar informacao do leilao
+                if titulo != "" and descricao != "":
+                    cur.execute("update leilao set (titulo, descricao) = (%s, %s) where leilaoid = %s", (titulo, descricao, leilaoId))
+                elif titulo == "":#titulo vazio
+                    cur.execute("update leilao set descricao = %s where leilaoid = %s", (descricao, leilaoId))
+                elif descricao == "":#decricao vazia
+                    cur.execute("update leilao set titulo = %s where leilaoid = %s", (titulo, leilaoId))
+                
+                #obter info atual do leilao
+                cur.execute("select * from leilao where leilaoid = %s", (leilaoId,))
+                current_info = cur.fetchall()[0]
+                message = {"leilaoId": current_info[0], "precoMinimo": current_info[1], "artigoId": current_info[2], "titulo": current_info[3], "descricao": current_info[4], "dataFim": current_info[5], "cancelado": current_info[6], "dataInicio": current_info[7], "pessoa_userId": current_info[8]}
+                cur.execute('commit')
+            else:
+                #Todo nao sei que codigo colocar aqui, considero que da erro se ambos os parametros forem ""
+                message = {"erro": "sem dados para alterar."}
+            return jsonify(message)
+        except(Exception, psycopg2.DatabaseError) as error:
+            print(error)
+        
+        finally:
+            if conn is not None:
+                conn.close()
+                print('Database connection closed.')
+
+
+
 if __name__ == '__main__':
     app.run(debug=True)
