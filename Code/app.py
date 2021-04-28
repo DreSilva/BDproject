@@ -436,6 +436,8 @@ def criarLicitacao(leilaoid, licitacao):
                 print('Database connection closed.')
 
 
+#TODO consultar detalhes leilao,escrever mensagens mural,entregar notficacao sobre licitacao ultrapassada,
+# termino na hora(triggers ainda n demos), e partes do admin
 
 if __name__ == '__main__':
     app.run(debug=True)
