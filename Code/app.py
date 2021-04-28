@@ -436,7 +436,68 @@ def criarLicitacao(leilaoid, licitacao):
                 print('Database connection closed.')
 
 
-#TODO consultar detalhes leilao,escrever mensagens mural,entregar notficacao sobre licitacao ultrapassada,
+@app.route('/leilao/<leilaoid>', methods=['GET'])
+def detalhesLeilao(leilaoid):
+    # Copiar isto para saber se o user tem token ou nao
+    l, code = token_required(request.args.get('token'))
+    if code == 403:
+        return l
+    else:
+        conn = None
+        try:
+            params = getDBConfigs()
+            conn = psycopg2.connect(**params)
+            cur = conn.cursor()
+
+            # obter o userId
+            username = l['user']  # usar para ir buscar os userid
+
+            cur.execute("begin transaction")
+            cur.execute("Select * from leilao where leilaoid = %s", (leilaoid, ))
+            infoLeilao = cur.fetchall()[0]
+            cur.execute("Select * from licitacao where leilao_leilaoid = %s order by valor DESC", (leilaoid,))
+            infoLicitacao = cur.fetchall()
+            cur.execute("Select * from comentario where leilao_leilaoid = %s", (leilaoid,))
+            infoComments = cur.fetchall()
+            cur.execute("Select * from versao where leilao_leilaoid = %s", (leilaoid,))
+            infoVersao = cur.fetchall()
+            cur.execute("commit")
+
+            listInfo = []
+
+            message = {"leilaoId": infoLeilao[0], "precoMinimo": infoLeilao[1], "artigoId": infoLeilao[2],
+                       "titulo": infoLeilao[3], "descricao": infoLeilao[4], "dataFim": infoLeilao[5],
+                       "cancelado": infoLeilao[6], "dataInicio": infoLeilao[7],
+                       "dono": infoLeilao[8]}
+            listInfo.append(message)
+
+            for licitacao in infoLicitacao:
+                message = {"licitacaoId": licitacao[0], "valor": licitacao[1], "valida": licitacao[2]}
+                listInfo.append(message)
+
+            for comment in infoComments:
+                message = {"comentarioId": comment[0], "comentario": comment[0], 'comentadorId': comment[3]}
+                listInfo.append(message)
+
+            for versao in infoVersao:
+                message = {"versao": versao[0], "titulo": versao[1], "descricao":versao[2]}
+                listInfo.append(message)
+
+            return jsonify(listInfo)
+
+        except(Exception, psycopg2.DatabaseError) as error:
+            if isinstance(error, psycopg2.errors.UniqueViolation):
+                message = {"Code": 409, "error": "Valor ja existe na base de dados."}
+                return jsonify(message)
+
+        finally:
+            if conn is not None:
+                conn.close()
+                print('Database connection closed.')
+
+
+
+#TODO escrever mensagens mural,entregar notficacao sobre licitacao ultrapassada,
 # termino na hora(triggers ainda n demos), e partes do admin
 
 if __name__ == '__main__':
