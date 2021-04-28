@@ -106,7 +106,7 @@ def login():
             print('Database connection closed.')
 
 
-@app.route('/leilao', methods=['POST'])  # falta acabar
+@app.route('/leilao', methods=['POST'])
 def criarLeilao():
     # Copiar isto para saber se o user tem token ou nao
     l, code = token_required(request.args.get('token'))
@@ -119,9 +119,9 @@ def criarLeilao():
             conn = psycopg2.connect(**params)
             cur = conn.cursor()
 
-            #obter o userId
-            username = l['user']#usar para ir buscar os userid
-            #cur.execute("Select * from pessoa where username = %s", (username))
+            # obter o userId
+            username = l['user']  # usar para ir buscar os userid
+            # cur.execute("Select * from pessoa where username = %s", (username))
             cur.execute("Select * from pessoa where username=%s", (username,))
             user_stats = cur.fetchall()
 
@@ -130,17 +130,19 @@ def criarLeilao():
             precoMinimo = request.form['precoMinimo']
             titulo = request.form['titulo']
             descricao = request.form['descricao']
-            dataFim = request.form['dataFim']#data no formato yyyy-mm-dd h:min
+            dataFim = request.form['dataFim']  # data no formato yyyy-mm-dd h:min
             dataInicio = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
 
-            #agora temos toda a informacao para criar o leilao
+            # agora temos toda a informacao para criar o leilao
             cur.execute("begin")
-            cur.execute("Insert into leilao(artigoId, precominimo, titulo, descricao, datainicio, datafim, cancelado, pessoa_userid) values(%s, %s, %s, %s, %s, %s, false, %s)", (artigoId, precoMinimo, titulo, descricao, dataInicio, dataFim, userId))
+            cur.execute(
+                "Insert into leilao(artigoId, precominimo, titulo, descricao, datainicio, datafim, cancelado, pessoa_userid) values(%s, %s, %s, %s, %s, %s, false, %s)",
+                (artigoId, precoMinimo, titulo, descricao, dataInicio, dataFim, userId))
             cur.execute("select * from leilao where artigoid = %s", (artigoId,))
             leilaoId = cur.fetchall()[0][0]
             cur.execute("commit")
 
-            message = {"leilaoId" : leilaoId}
+            message = {"leilaoId": leilaoId}
             return jsonify(message)
         except(Exception, psycopg2.DatabaseError) as error:
             if isinstance(error, psycopg2.errors.UniqueViolation):
@@ -151,7 +153,6 @@ def criarLeilao():
             if conn is not None:
                 conn.close()
                 print('Database connection closed.')
-        
 
 
 @app.route('/leiloes', methods=['GET'])  # falta testar isto
@@ -205,9 +206,10 @@ def listarAtividade():
             # create a cursor ( a cursor is the command that "talks" with the database")
             cur = conn.cursor()
             cur.execute("begin transaction")
-            cur.execute("Select userid from pessoa where username=%s", (user, ))
+            cur.execute("Select userid from pessoa where username=%s", (user,))
             id = cur.fetchall()[0]
-            cur.execute("Select leilaoid,descricao from leilao where pessoa_userid = %s", id) # obter leiloes onde o user e o criador
+            cur.execute("Select leilaoid,descricao from leilao where pessoa_userid = %s",
+                        id)  # obter leiloes onde o user e o criador
             leiloes = cur.fetchall()
             lista = []
             for leilao in leiloes:
@@ -217,9 +219,10 @@ def listarAtividade():
             licitacoes = cur.fetchall()
             for licitacao in licitacoes:
                 cur.execute("Select leilaoid,descricao from leilao where leilaoid = %s", licitacao)
-                leilao = cur.fetchall()
-                message = {"leilaoId": leilao[0], "descricao": leilao[1], "role": "Licitador"}
-                lista.append(message)
+                leiloes = cur.fetchall()
+                for leilao in leiloes:
+                    message = {"leilaoId": leilao[0], "descricao": leilao[1], "role": "Licitador"}
+                    lista.append(message)
 
             return jsonify(lista)
 
@@ -232,9 +235,9 @@ def listarAtividade():
                 print('Database connection closed.')
 
 
-@app.route('/leiloes/<keyword>', methods = ['GET'])
+@app.route('/leiloes/<keyword>', methods=['GET'])
 def listarLeiloesKeyword(keyword):
-    #a keyword pode tanto ser uma descricao como um codigo EAN/ISBN
+    # a keyword pode tanto ser uma descricao como um codigo EAN/ISBN
     l, code = token_required(request.args.get('token'))
     if code == 403:
         return l
@@ -245,15 +248,16 @@ def listarLeiloesKeyword(keyword):
             conn = psycopg2.connect(**params)
             cur = conn.cursor()
 
-            try:#se for um numero tanto pode ser um artigoId como algo da descricao, logo pesquisa-se ambos.
+            try:  # se for um numero tanto pode ser um artigoId como algo da descricao, logo pesquisa-se ambos.
                 int(keyword)
                 flag = 1
-            except(Exception) as error:#nao e um numero
+            except(Exception) as error:  # nao e um numero
                 flag = 0
 
             cur.execute('begin')
             if flag == 1:
-                cur.execute("select leilaoid, descricao from leilao where artigoid = %s or descricao = %s", (keyword, keyword))
+                cur.execute("select leilaoid, descricao from leilao where artigoid = %s or descricao = %s",
+                            (keyword, keyword))
             else:
                 cur.execute("select leilaoid, descricao from leilao where descricao = %s", (keyword,))
             leiloes = cur.fetchall()
@@ -263,27 +267,27 @@ def listarLeiloesKeyword(keyword):
             for leilao in leiloes:
                 message = {'leilaoId': leilao[0], 'descricao': leilao[1]}
                 lei_list.append(message)
-            
+
             return jsonify(lei_list)
 
         except(Exception, psycopg2.DatabaseError) as error:
             print(error)
-        
+
         finally:
             if conn is not None:
                 conn.close()
                 print('Database connection closed.')
 
 
-@app.route('/leilao/<leilaoId>', methods = ['PUT'])
+@app.route('/leilao/<leilaoId>', methods=['PUT'])
 def editarLeilao(leilaoId):
     l, code = token_required(request.args.get('token'))
     if code == 403:
         return l
     else:
         conn = None
-        username = l['user']#para saber se este leilao e deste user
-        
+        username = l['user']  # para saber se este leilao e deste user
+
         try:
             params = getDBConfigs()
             conn = psycopg2.connect(**params)
@@ -295,21 +299,21 @@ def editarLeilao(leilaoId):
             cur.execute("select pessoa_userid from leilao where leilaoid = %s", (leilaoId,))
             pessoa_userId = cur.fetchall()[0][0]
 
-            if userId != pessoa_userId:#o user nao e o criador do leilao, logo nao o pode alterar
+            if userId != pessoa_userId:  # o user nao e o criador do leilao, logo nao o pode alterar
                 return jsonify({"erro": "nao e o criador do leilao."})
 
-            #assumo que algum deles possa ser uma string vazia
+            # assumo que algum deles possa ser uma string vazia
             titulo = request.form['titulo']
             descricao = request.form['descricao']
 
-            #se algum dos campos tiver conteudo, tem de ser registado (versao) o titulo e a descricao antiga
+            # se algum dos campos tiver conteudo, tem de ser registado (versao) o titulo e a descricao antiga
             if titulo != "" or descricao != "":
                 cur.execute('begin')
-                #obter os valores atuais
+                # obter os valores atuais
                 cur.execute("select titulo, descricao from leilao where leilaoid = %s", (leilaoId,))
                 past_info = cur.fetchall()
 
-                #obter o ultimo numero de versao utilizado
+                # obter o ultimo numero de versao utilizado
                 cur.execute("select versao from versao where leilao_leilaoid = %s order by versao desc", (leilaoId))
                 aux = cur.fetchall()
 
@@ -318,31 +322,37 @@ def editarLeilao(leilaoId):
                 else:
                     last_version = int(aux[0][0])
 
-                #criar registo na tabela versao
-                #so adiciona se o titulo ou descricao forem diferentes do que ja la estao
+                # criar registo na tabela versao
+                # so adiciona se o titulo ou descricao forem diferentes do que ja la estao
                 if past_info[0][0] != titulo and titulo != "" or past_info[0][1] != descricao and descricao != "":
-                    cur.execute("insert into versao (versao, titulo, descricao, leilao_leilaoid) values(%s, %s, %s, %s)", (str(last_version + 1), past_info[0][0], past_info[0][1], leilaoId))
+                    cur.execute(
+                        "insert into versao (versao, titulo, descricao, leilao_leilaoid) values(%s, %s, %s, %s)",
+                        (str(last_version + 1), past_info[0][0], past_info[0][1], leilaoId))
 
-                #atualizar informacao do leilao
+                # atualizar informacao do leilao
                 if titulo != "" and descricao != "":
-                    cur.execute("update leilao set (titulo, descricao) = (%s, %s) where leilaoid = %s", (titulo, descricao, leilaoId))
-                elif titulo == "":#titulo vazio
+                    cur.execute("update leilao set (titulo, descricao) = (%s, %s) where leilaoid = %s",
+                                (titulo, descricao, leilaoId))
+                elif titulo == "":  # titulo vazio
                     cur.execute("update leilao set descricao = %s where leilaoid = %s", (descricao, leilaoId))
-                elif descricao == "":#decricao vazia
+                elif descricao == "":  # decricao vazia
                     cur.execute("update leilao set titulo = %s where leilaoid = %s", (titulo, leilaoId))
-                
-                #obter info atual do leilao
+
+                # obter info atual do leilao
                 cur.execute("select * from leilao where leilaoid = %s", (leilaoId,))
                 current_info = cur.fetchall()[0]
-                message = {"leilaoId": current_info[0], "precoMinimo": current_info[1], "artigoId": current_info[2], "titulo": current_info[3], "descricao": current_info[4], "dataFim": current_info[5], "cancelado": current_info[6], "dataInicio": current_info[7], "pessoa_userId": current_info[8]}
+                message = {"leilaoId": current_info[0], "precoMinimo": current_info[1], "artigoId": current_info[2],
+                           "titulo": current_info[3], "descricao": current_info[4], "dataFim": current_info[5],
+                           "cancelado": current_info[6], "dataInicio": current_info[7],
+                           "pessoa_userId": current_info[8]}
                 cur.execute('commit')
             else:
-                #Todo nao sei que codigo colocar aqui, considero que da erro se ambos os parametros forem ""
+                # Todo nao sei que codigo colocar aqui, considero que da erro se ambos os parametros forem ""
                 message = {"erro": "sem dados para alterar."}
             return jsonify(message)
         except(Exception, psycopg2.DatabaseError) as error:
             print(error)
-        
+
         finally:
             if conn is not None:
                 conn.close()
@@ -362,29 +372,43 @@ def criarLicitacao():
             conn = psycopg2.connect(**params)
             cur = conn.cursor()
 
-            #obter o userId
-            username = l['user']#usar para ir buscar os userid
-            #cur.execute("Select * from pessoa where username = %s", (username))
+            # obter o userId
+            username = l['user']  # usar para ir buscar os userid
+            # cur.execute("Select * from pessoa where username = %s", (username))
             cur.execute("Select * from pessoa where username=%s", (username,))
             user_stats = cur.fetchall()
 
-
-            if user_stats[0][5]:
+            if not user_stats[0][5]:
                 pessoa_userId = user_stats[0][0]
-                leilao_leilaoid = request.form['leilao_leilaoid']
-                valor = request.form['valor']
+                leilao_leilaoid = int(request.form['leilao_leilaoid'])
+                valor = int(request.form['valor'])
 
-                cur.execute("Select * from leilao where leilaoid=%s", (leilao_leilaoid))
+                cur.execute("begin")
+                cur.execute("Select * from leilao where leilaoid=%s", (leilao_leilaoid,))
                 leilao_stats = cur.fetchall()
-                if leilao_stats[0][5]:
-                    #agora temos toda a informacao para criar o licitação
-                    cur.execute("begin")
-                    cur.execute("Insert into licitacao( valor, valida, leilao_leilaoid, pessoa_userid) values( %s, true, %s, %s)", ( valor, leilao_leilaoid, pessoa_userId))
-                    cur.execute("select * from licitacao where leilao_leilaoid = %s and pessoa_user_id = %s order by valor DESC", (leilao_leilaoid,pessoa_userId))
+                cur.execute("Select * from licitacao where leilao_leilaoid = %s order by valor DESC",(leilao_leilaoid, ))
+
+                valorAlto = cur.fetchall()
+                if valorAlto:
+                    valorAlto = valorAlto[0][1]
+
+                    if valor < valorAlto:
+                        message = {"Code": 403, "error": "Licitacao mais baixa que a atual"}
+                        return jsonify(message)
+
+                if leilao_stats[0][5] > datetime.datetime.utcnow():
+                    # agora temos toda a informacao para criar o licitação
+
+                    cur.execute(
+                        "Insert into licitacao( valor, valida, leilao_leilaoid, pessoa_userid) values( %s, true, %s, %s)",
+                        (valor, leilao_leilaoid, pessoa_userId))
+                    cur.execute(
+                        "select * from licitacao where leilao_leilaoid = %s and pessoa_userid = %s order by valor DESC",
+                        (leilao_leilaoid, pessoa_userId))
                     licitacaoId = cur.fetchall()[0][0]
                     cur.execute("commit")
 
-                    message = {"licitacaoId" : licitacaoId}
+                    message = {"licitacaoId": licitacaoId}
                     return jsonify(message)
                 else:
                     message = {"Code": 403, "error": "o leilão já terminou"}
@@ -395,7 +419,7 @@ def criarLicitacao():
 
         except(Exception, psycopg2.DatabaseError) as error:
             if isinstance(error, psycopg2.errors.UniqueViolation):
-                message = {"Code": 409, "error": "artigo ja existe na base de dados."}
+                message = {"Code": 409, "error": "Valor ja existe na base de dados."}
                 return jsonify(message)
 
         finally:
