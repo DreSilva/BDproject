@@ -155,7 +155,7 @@ def criarLeilao():
                 print('Database connection closed.')
 
 
-@app.route('/leiloes', methods=['GET'])  # falta testar isto
+@app.route('/leiloes', methods=['GET'])
 def listarLeiloes():
     # Copiar isto para saber se o user tem token ou nao
     l, code = token_required(request.args.get('token'))
@@ -188,7 +188,7 @@ def listarLeiloes():
                 print('Database connection closed.')
 
 
-@app.route('/atividade', methods=['GET'])  # falta testar isto
+@app.route('/atividade', methods=['GET'])  
 def listarAtividade():
     # Copiar isto para saber se o user tem token ou nao
     l, code = token_required(request.args.get('token'))
@@ -359,8 +359,8 @@ def editarLeilao(leilaoId):
                 print('Database connection closed.')
 
 
-@app.route('/licitacao', methods=['POST'])
-def criarLicitacao():
+@app.route('/licitar/<leilaoid>/<licitacao>', methods=['GET'])
+def criarLicitacao(leilaoid, licitacao):
     # Copiar isto para saber se o user tem token ou nao
     l, code = token_required(request.args.get('token'))
     if code == 403:
@@ -380,8 +380,8 @@ def criarLicitacao():
 
             if not user_stats[0][5]:
                 pessoa_userId = user_stats[0][0]
-                leilao_leilaoid = int(request.form['leilao_leilaoid'])
-                valor = int(request.form['valor'])
+                leilao_leilaoid = int(leilaoid)
+                valor = int(licitacao)
 
                 cur.execute("begin")
                 cur.execute("Select * from leilao where leilaoid=%s", (leilao_leilaoid,))
@@ -394,7 +394,15 @@ def criarLicitacao():
 
                     if valor < valorAlto:
                         message = {"Code": 403, "error": "Licitacao mais baixa que a atual"}
+                        cur.execute("commit")
                         return jsonify(message)
+
+                else:  # TODO testar esta parte
+                    if valorAlto < leilao_stats[0][1]:
+                        message = {"Code": 403, "error": "Licitacao mais baixa que o valor minimo"}
+                        cur.execute("commit")
+                        return jsonify(message)
+
 
                 if leilao_stats[0][5] > datetime.datetime.utcnow():
                     # agora temos toda a informacao para criar o licitação
@@ -426,6 +434,7 @@ def criarLicitacao():
             if conn is not None:
                 conn.close()
                 print('Database connection closed.')
+
 
 
 if __name__ == '__main__':
