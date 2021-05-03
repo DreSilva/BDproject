@@ -215,7 +215,7 @@ def listarAtividade():
             for leilao in leiloes:
                 message = {"leilaoId": leilao[0], "descricao": leilao[1], "role": "Criador"}
                 lista.append(message)
-            cur.execute("Select leilao_leilaoid from licitacao where pessoa_userid = %s", id)
+            cur.execute("Select DISTINCT leilao_leilaoid from licitacao where pessoa_userid = %s", id)
             licitacoes = cur.fetchall()
             for licitacao in licitacoes:
                 cur.execute("Select leilaoid,descricao from leilao where leilaoid = %s", licitacao)
@@ -389,6 +389,12 @@ def criarLicitacao(leilaoid, licitacao):
                 cur.execute("Select * from licitacao where leilao_leilaoid = %s order by valor DESC",(leilao_leilaoid, ))
 
                 licitacao_stat = cur.fetchall()
+
+                if leilao_stats[0][8] == pessoa_userId:
+                    message = {"Code": 403, "error": "Não pode votar no seu proprio Leilão"}
+                    cur.execute("commit")
+                    return jsonify(message)
+
                 if licitacao_stat:
                     valorAlto = licitacao_stat[0][1]
 
@@ -402,9 +408,6 @@ def criarLicitacao(leilaoid, licitacao):
                         return jsonify(message)
                     else: #TODO Testar isto
                         notificacaoLicitacao(pessoa_userId, leilao_leilaoid, valor)
-                    #     temp=licitacao_stat[0][4];
-                    #     message = "A sua licitação no leilão " + licitacao_stat[0][3] + "foi ultrapassada. Valor atual: " + valor
-                    #     cur.execute("Insert into mensagem(mensagem, pessoa_userid) values(%s, %s)",(message,temp))
 
                 else:
                     if valor < leilao_stats[0][1]:
@@ -428,6 +431,7 @@ def criarLicitacao(leilaoid, licitacao):
                     message = {"licitacaoId": licitacaoId}
                     return jsonify(message)
                 else:
+                    cur.execute("commit")
                     message = {"Code": 403, "error": "o leilão já terminou"}
                     return jsonify(message)
             else:
@@ -435,6 +439,7 @@ def criarLicitacao(leilaoid, licitacao):
                 return jsonify(message)
 
         except(Exception, psycopg2.DatabaseError) as error:
+
             if isinstance(error, psycopg2.errors.UniqueViolation):
                 message = {"Code": 409, "error": "Valor ja existe na base de dados."}
                 return jsonify(message)
@@ -577,9 +582,63 @@ def notificacaoLicitacao(pessoa_userId, leilaoId, value):
             print('Database connection is closed.')
 
 
-#TODO testar escrever mensagens mural,testar notficacao sobre licitacao ultrapassada,
-# termino na hora(triggers ainda n demos), e partes do admin
-# fazer a listagem das mensagens
+@app.route('/caixamensagens', methods=['GET'])
+def caixaMensagens():
+    l, code = token_required(request.args.get('token'))
+    if code == 403:
+        return l
+    else:
+        conn = None
+        try:
+            params = getDBConfigs()
+            conn = psycopg2.connect(**params)
+            cur = conn.cursor()
+            username = l['user']
+            cur.execute("begin")
+            cur.execute("Select userid from pessoa where username=%s ", (username,))
+            userid = cur.fetchall()[0]
+
+            cur.execute("Select * from notificacao where pessoa_userid=%s", userid)
+            notificacoes = cur.fetchall()
+
+            cur.execute("Select leilaoid,descricao from leilao where pessoa_userid = %s", userid)  # obter leiloes onde o user e o criador
+            leiloes = cur.fetchall()
+
+            cur.execute("Select DISTINCT leilao_leilaoid from licitacao where pessoa_userid = %s", userid)
+            licitacoes = cur.fetchall()
+            lista = []
+
+            for notificaco in notificacoes:
+                message = {'tipo': 'Notificação','mensagem': notificaco[0]}
+                lista.append(message)
+
+            for leilao in leiloes:
+                cur.execute("Select * from comentario where leilao_leilaoid=%s", (leilao[0], ))
+                mural = cur.fetchall()
+                for comment in mural:
+                    message = {'tipo': 'Mural Criador','mensagem':comment[1]}
+                    lista.append(message)
+
+            for licitacao in licitacoes:
+                cur.execute("Select * from comentario where leilao_leilaoid=%s", licitacao)
+                mural = cur.fetchall()
+                for comment in mural:
+                    message = {'tipo': 'Mural Licitador', 'mensagem': comment[1]}
+                    lista.append(message)
+
+            cur.execute("commit")
+            return jsonify(lista)
+
+        except(Exception, psycopg2.DatabaseError) as error:
+            print(error)
+        finally:
+            if conn:
+                conn.close()
+                print('Database connection is closed.')
+
+
+
+# TODO termino na hora(triggers ainda n demos), e partes do admin
 
 if __name__ == '__main__':
     app.run(debug=True)
