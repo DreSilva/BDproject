@@ -388,17 +388,25 @@ def criarLicitacao(leilaoid, licitacao):
                 leilao_stats = cur.fetchall()
                 cur.execute("Select * from licitacao where leilao_leilaoid = %s order by valor DESC",(leilao_leilaoid, ))
 
-                valorAlto = cur.fetchall()
-                if valorAlto:
-                    valorAlto = valorAlto[0][1]
+                licitacao_stat = cur.fetchall()
+                if licitacao_stat:
+                    valorAlto = licitacao_stat[0][1]
 
                     if valor < valorAlto:
-                        message = {"Code": 403, "error": "Licitacao mais baixa que a atual"}
+                        message = {"Code": 403, "error": "Licitacao mais baixa que a atual. Aumente o valor."}
                         cur.execute("commit")
                         return jsonify(message)
+                    elif valor < valorAlto:
+                        message = {"Code": 403, "error": "Licitacao igual à atual. Aumente o valor."}
+                        cur.execute("commit")
+                        return jsonify(message)
+                    else: #TODO Testar isto
+                        temp=licitacao_stat[0][4];
+                        message = "A sua licitação no leilão " + licitacao_stat[0][3] + "foi ultrapassada. Valor atual: " + valor
+                        cur.execute("Insert into mensagem(mensagem, pessoa_userid) values(%s, %s)",(message,temp))
 
-                else:  # TODO testar esta parte
-                    if valorAlto < leilao_stats[0][1]:
+                else:
+                    if valor < leilao_stats[0][1]:
                         message = {"Code": 403, "error": "Licitacao mais baixa que o valor minimo"}
                         cur.execute("commit")
                         return jsonify(message)
@@ -496,9 +504,51 @@ def detalhesLeilao(leilaoid):
                 print('Database connection closed.')
 
 
+@app.route('/comentário', methods=['POST'])
+def comentarLeilao(): #TODO testar esta func toda
+    # Copiar isto para saber se o user tem token ou nao
+    l, code = token_required(request.args.get('token'))
+    if code == 403:
+        return l
+    else:
+        conn = None
+        try:
+            params = getDBConfigs()
+            conn = psycopg2.connect(**params)
+            cur = conn.cursor()
 
-#TODO escrever mensagens mural,entregar notficacao sobre licitacao ultrapassada,
+            # obter o userId
+            username = l['user']  # usar para ir buscar os userid
+            # cur.execute("Select * from pessoa where username = %s", (username))
+            cur.execute("Select * from pessoa where username=%s", (username,))
+            user_stats = cur.fetchall()
+
+            userId = user_stats[0][0]
+            leilaoid = request.form['leilaoid']
+            comentario = request.form['comentario']
+
+            # agora temos toda a informacao para criar o leilao
+            cur.execute("begin")
+            cur.execute("Insert into comentario(comentario, leilao_leilaoid, pessoa_userid) values(%s, %s, %s)", (comentario, leilaoid, userId))
+            cur.execute("select * from comentario where  comentario = %s and leilao_leilaoid = %s and pessoa_userid =%s", (comentario,leilaoid,userId))
+            comentarioId = cur.fetchall()[0][0]
+            cur.execute("commit")
+
+            message = {"comentarioid": comentarioId}
+            return jsonify(message)
+        except(Exception, psycopg2.DatabaseError) as error:
+            if isinstance(error, psycopg2.errors.UniqueViolation):
+                message = {"Code": 409, "error": "artigo ja existe na base de dados."}
+                return jsonify(message)
+
+        finally:
+            if conn is not None:
+                conn.close()
+                print('Database connection closed.')
+
+#TODO testar escrever mensagens mural,testar notficacao sobre licitacao ultrapassada,
 # termino na hora(triggers ainda n demos), e partes do admin
+# fazer a listagem das mensagens
 
 if __name__ == '__main__':
     app.run(debug=True)
