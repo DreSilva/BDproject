@@ -396,14 +396,15 @@ def criarLicitacao(leilaoid, licitacao):
                         message = {"Code": 403, "error": "Licitacao mais baixa que a atual. Aumente o valor."}
                         cur.execute("commit")
                         return jsonify(message)
-                    elif valor < valorAlto:
+                    elif valor == valorAlto:
                         message = {"Code": 403, "error": "Licitacao igual à atual. Aumente o valor."}
                         cur.execute("commit")
                         return jsonify(message)
                     else: #TODO Testar isto
-                        temp=licitacao_stat[0][4];
-                        message = "A sua licitação no leilão " + licitacao_stat[0][3] + "foi ultrapassada. Valor atual: " + valor
-                        cur.execute("Insert into mensagem(mensagem, pessoa_userid) values(%s, %s)",(message,temp))
+                        notificacaoLicitacao(pessoa_userId, leilao_leilaoid, valor)
+                    #     temp=licitacao_stat[0][4];
+                    #     message = "A sua licitação no leilão " + licitacao_stat[0][3] + "foi ultrapassada. Valor atual: " + valor
+                    #     cur.execute("Insert into mensagem(mensagem, pessoa_userid) values(%s, %s)",(message,temp))
 
                 else:
                     if valor < leilao_stats[0][1]:
@@ -545,6 +546,36 @@ def comentarLeilao(): #TODO testar esta func toda
             if conn is not None:
                 conn.close()
                 print('Database connection closed.')
+
+def notificacaoLicitacao(pessoa_userId, leilaoId, value):
+    #pessoa_userId -> id de quem fez a licitacao
+    #leilaoId -> leilao no qual a licitacao foi efetuada
+    #value -> valor da licitacao
+
+    conn = None
+    try:
+        params = getDBConfigs()
+        conn = psycopg2.connect(**params)
+        cur = conn.cursor()
+        
+        #obter as pessoas que licitaram no leilao
+        cur.execute("begin")
+        cur.execute("select distinct pessoa_userid from licitacao where leilao_leilaoid = %s and pessoa_userid <> %s", (leilaoId, pessoa_userId))
+        users = cur.fetchall()
+        print(users)
+        if users != []:#houve licitacoes no leilao(sem ser a do user atual)
+            #mandar a notificacao
+            message = "There's been a better bid on the auction number {}, with value {}.".format(leilaoId, value)
+            for user in users:
+                cur.execute('insert into notificacao (mensagem, pessoa_userid) values(%s, %s)', (message, user[0]))
+        cur.execute("commit")
+    except(Exception, psycopg2.DatabaseError) as error:
+            print(error)
+    finally:
+        if conn:
+            conn.close()
+            print('Database connection is closed.')
+
 
 #TODO testar escrever mensagens mural,testar notficacao sobre licitacao ultrapassada,
 # termino na hora(triggers ainda n demos), e partes do admin
