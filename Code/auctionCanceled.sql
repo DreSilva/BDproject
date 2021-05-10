@@ -3,7 +3,7 @@ language plpgsql
 as $$
 declare
     c1 cursor for
-    select licitacao.pessoa_userid from licitacao where licitacao.leilao_leilaoid = leilaoId;
+    select DISTINCT licitacao.pessoa_userid from licitacao where licitacao.leilao_leilaoid = leilaoId;
 begin
     for elem in c1
     loop
