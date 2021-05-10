@@ -406,8 +406,9 @@ def criarLicitacao(leilaoid, licitacao):
                         message = {"Code": 403, "error": "Licitacao igual à atual. Aumente o valor."}
                         cur.execute("commit")
                         return jsonify(message)
-                    else: #TODO Testar isto
-                        notificacaoLicitacao(pessoa_userId, leilao_leilaoid, valor)
+                    #else: #TODO Testar isto
+                        #notificacaoLicitacao(pessoa_userId, leilao_leilaoid, valor)
+                        #tem de ser criado um trigger para desempenhar esta funcao
 
                 else:
                     if valor < leilao_stats[0][1]:
@@ -416,7 +417,7 @@ def criarLicitacao(leilaoid, licitacao):
                         return jsonify(message)
 
 
-                if leilao_stats[0][5] > datetime.datetime.utcnow():
+                if leilao_stats[0][5] > datetime.datetime.utcnow() and not leilao_stats[0][6]:
                     # agora temos toda a informacao para criar o licitação
 
                     cur.execute(
@@ -636,8 +637,100 @@ def caixaMensagens():
                 conn.close()
                 print('Database connection is closed.')
 
+@app.route('/estatisticas', methods=['GET'])
+def estatisticas():
+    l, code = token_required(request.args.get('token'))
+    if code == 403:
+        return l
+    conn = None
+    try:
+        params = getDBConfigs()
+        conn = psycopg2.connect(**params)
+        cur = conn.cursor()
+        username = l['user']
+
+        #verificar se o user e admin
+        cur.execute('select pessoa.admin from pessoa where username = %s', (username, ))
+        admin = cur.fetchall()[0][0]
+
+        if not admin:
+            message = {"code": 403, "message": "You don't have permission to access the data."}
+            return jsonify(message)
+
+        cur.execute("select leilao.pessoa_userid from leilao group by leilao.pessoa_userid order by count(leilao.pessoa_userid) desc")
+        top_created_l = cur.fetchall()
+
+        cur.execute("select licitacao.pessoa_userid from licitacao group by licitacao.pessoa_userid order by count(licitacao.pessoa_userid) desc")
+        top_won_l = cur.fetchall()
+
+        time_delta = datetime.timedelta(days = 10)
+        current_date_minus_10 = (datetime.datetime.now() - time_delta).strftime("%Y-%m-%d %H:%M")
+        cur.execute("select count(leilao.leilaoid) from leilao where datainicio > %s", (current_date_minus_10,))
+        number_l = cur.fetchall()[0][0]
+
+        lista = []
+
+        temp = []
+        for i in range(min(10, len(top_created_l))):
+            temp.append(top_created_l[i][0])
+        lista.append({"Top auction creaters": temp})
+
+        temp = []
+        for i in range(min(10, len(top_won_l))):
+            temp.append(top_won_l[i][0])
+        lista.append({"Top auction winners": temp})
+
+        lista.append({"auctions created": number_l})
+
+        return jsonify(lista)
+    except(Exception, psycopg2.DatabaseError) as error:
+        print(error)
+    finally:
+        if conn:
+            conn.close()
+            print('Database connection is closed.')
 
 
+@app.route('/cancelAuction/<leilaoId>', methods=['GET'])
+def cancelarLeilao(leilaoId):
+    l, code = token_required(request.args.get('token'))
+    if code == 403:
+        return l
+    conn = None
+    try:
+        params = getDBConfigs()
+        conn = psycopg2.connect(**params)
+        cur = conn.cursor()
+        username = l['user']
+
+        #verificar se o user e admin
+        cur.execute('select pessoa.admin from pessoa where username = %s', (username, ))
+        admin = cur.fetchall()[0][0]
+
+        if not admin:
+            message = {"code": 403, "message": "You don't have permission to access the data."}
+            return jsonify(message)
+
+        #verificar se o leilao ja acabou
+        cur.execute("select datafim, cancelado from leilao where leilaoid = %s" , (leilaoId, ))
+        data = cur.fetchall()
+        datafim = data[0][0]
+        status = data[0][1]
+
+        if datafim < datetime.datetime.now() or status:#ja acabou
+            return jsonify({"message": "Auction has ended already."})
+
+        cur.execute("begin")
+        cur.execute("update leilao set cancelado = true where leilao.leilaoid = %s", (leilaoId, ))
+        cur.execute("commit")
+        #Para a notificacao um trigger tem de ser criado par este update no registo do leilao
+        return jsonify({"message": "Auction canceled."})
+    except(Exception, psycopg2.DatabaseError) as error:
+        print(error)
+    finally:
+        if conn:
+            conn.close()
+            print('Database connection is closed.')
 # TODO termino na hora(triggers ainda n demos), e partes do admin
 
 if __name__ == '__main__':
