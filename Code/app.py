@@ -117,7 +117,6 @@ def login():
                     app.config['SECRET_KEY'], algorithm="HS256")
                 cur.close()
                 conn.commit()
-
                 return jsonify({'token': token})
             else:
                 cur.close()
@@ -443,7 +442,7 @@ def criarLicitacao(leilaoid, licitacao):
                 licitacao_stat = cur.fetchall()
 
                 if leilao_stats[0][8] == pessoa_userId:
-                    message = {"Code": 403, "error": "Não pode votar no seu proprio Leilão"}
+                    message = {"Code": 403, "error": "Não pode licitar no seu proprio Leilão"}
                     cur.close()
                     conn.commit()
                     return jsonify(message)
