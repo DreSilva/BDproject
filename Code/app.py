@@ -50,12 +50,10 @@ def register():
 
         # create a cursor ( a cursor is the command that "talks" with the database")
         cur = conn.cursor()
-        cur.execute("Begin Transaction")
         cur.execute("Insert into pessoa(username,email,password,admin,banned) values(%s,%s,%s,false,false )",
                     (username, email, password))
         cur.execute("Select userid from pessoa where username=%s and password=%s", (username, password))
         id = cur.fetchall()
-        cur.execute("commit")
         message = {"userId": id[0][0]}
         return message
 
@@ -141,13 +139,11 @@ def criarLeilao():
             dataInicio = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
 
             # agora temos toda a informacao para criar o leilao
-            cur.execute("begin")
             cur.execute(
                 "Insert into leilao(artigoId, precominimo, titulo, descricao, datainicio, datafim, cancelado, pessoa_userid) values(%s, %s, %s, %s, %s, %s, false, %s)",
                 (artigoId, precoMinimo, titulo, descricao, dataInicio, dataFim, userId))
             cur.execute("select * from leilao where artigoid = %s", (artigoId,))
             leilaoId = cur.fetchall()[0][0]
-            cur.execute("commit")
 
             message = {"leilaoId": leilaoId}
             return jsonify(message)
@@ -212,7 +208,6 @@ def listarAtividade():
 
             # create a cursor ( a cursor is the command that "talks" with the database")
             cur = conn.cursor()
-            cur.execute("begin transaction")
             cur.execute("Select userid from pessoa where username=%s", (user,))
             id = cur.fetchall()[0]
             cur.execute("Select leilaoid,descricao,datafim from leilao where pessoa_userid = %s",
@@ -396,7 +391,6 @@ def criarLicitacao(leilaoid, licitacao):
                 leilao_leilaoid = int(leilaoid)
                 valor = int(licitacao)
 
-                cur.execute("begin")
                 cur.execute("Select * from leilao where leilaoid=%s", (leilao_leilaoid,))
                 leilao_stats = cur.fetchall()
                 cur.execute("Select * from licitacao where leilao_leilaoid = %s order by valor DESC",
@@ -406,7 +400,6 @@ def criarLicitacao(leilaoid, licitacao):
 
                 if leilao_stats[0][8] == pessoa_userId:
                     message = {"Code": 403, "error": "Não pode votar no seu proprio Leilão"}
-                    cur.execute("commit")
                     return jsonify(message)
 
                 if licitacao_stat:
@@ -414,11 +407,9 @@ def criarLicitacao(leilaoid, licitacao):
 
                     if valor < valorAlto:
                         message = {"Code": 403, "error": "Licitacao mais baixa que a atual. Aumente o valor."}
-                        cur.execute("commit")
                         return jsonify(message)
                     elif valor == valorAlto:
                         message = {"Code": 403, "error": "Licitacao igual à atual. Aumente o valor."}
-                        cur.execute("commit")
                         return jsonify(message)
                     # else: #TODO Testar isto
                     # notificacaoLicitacao(pessoa_userId, leilao_leilaoid, valor)
@@ -427,7 +418,6 @@ def criarLicitacao(leilaoid, licitacao):
                 else:
                     if valor < leilao_stats[0][1]:
                         message = {"Code": 403, "error": "Licitacao mais baixa que o valor minimo"}
-                        cur.execute("commit")
                         return jsonify(message)
 
                 if leilao_stats[0][5] > datetime.datetime.utcnow() and not leilao_stats[0][6]:
@@ -440,12 +430,10 @@ def criarLicitacao(leilaoid, licitacao):
                         "select * from licitacao where leilao_leilaoid = %s and pessoa_userid = %s order by valor DESC",
                         (leilao_leilaoid, pessoa_userId))
                     licitacaoId = cur.fetchall()[0][0]
-                    cur.execute("commit")
 
                     message = {"licitacaoId": licitacaoId}
                     return jsonify(message)
                 else:
-                    cur.execute("commit")
                     message = {"Code": 403, "error": "o leilão já terminou"}
                     return jsonify(message)
             else:
@@ -480,7 +468,6 @@ def detalhesLeilao(leilaoid):
             # obter o userId
             username = l['user']  # usar para ir buscar os userid
 
-            cur.execute("begin transaction")
             cur.execute("Select * from leilao where leilaoid = %s", (leilaoid,))
             infoLeilao = cur.fetchall()[0]
             cur.execute("Select * from licitacao where leilao_leilaoid = %s order by valor DESC", (leilaoid,))
@@ -489,7 +476,6 @@ def detalhesLeilao(leilaoid):
             infoComments = cur.fetchall()
             cur.execute("Select * from versao where leilao_leilaoid = %s", (leilaoid,))
             infoVersao = cur.fetchall()
-            cur.execute("commit")
 
             listInfo = []
             if infoLeilao[5] > datetime.datetime.utcnow():
@@ -555,14 +541,12 @@ def comentarLeilao():  # TODO testar esta func toda
             comentario = request.form['comentario']
 
             # agora temos toda a informacao para criar o leilao
-            cur.execute("begin")
             cur.execute("Insert into comentario(comentario, leilao_leilaoid, pessoa_userid) values(%s, %s, %s)",
                         (comentario, leilaoid, userId))
             cur.execute(
                 "select * from comentario where  comentario = %s and leilao_leilaoid = %s and pessoa_userid =%s",
                 (comentario, leilaoid, userId))
             comentarioId = cur.fetchall()[0][0]
-            cur.execute("commit")
 
             message = {"comentarioid": comentarioId}
             return jsonify(message)
@@ -589,7 +573,6 @@ def notificacaoLicitacao(pessoa_userId, leilaoId, value):
         cur = conn.cursor()
 
         # obter as pessoas que licitaram no leilao
-        cur.execute("begin")
         cur.execute("select distinct pessoa_userid from licitacao where leilao_leilaoid = %s and pessoa_userid <> %s",
                     (leilaoId, pessoa_userId))
         users = cur.fetchall()
@@ -599,7 +582,6 @@ def notificacaoLicitacao(pessoa_userId, leilaoId, value):
             message = "There's been a better bid on the auction number {}, with value {}.".format(leilaoId, value)
             for user in users:
                 cur.execute('insert into notificacao (mensagem, pessoa_userid) values(%s, %s)', (message, user[0]))
-        cur.execute("commit")
     except(Exception, psycopg2.DatabaseError) as error:
         print(error)
     finally:
@@ -620,7 +602,6 @@ def caixaMensagens():
             conn = psycopg2.connect(**params)
             cur = conn.cursor()
             username = l['user']
-            cur.execute("begin")
             cur.execute("Select userid from pessoa where username=%s ", (username,))
             userid = cur.fetchall()[0]
 
@@ -653,7 +634,6 @@ def caixaMensagens():
                     message = {'tipo': 'Mural Licitador', 'mensagem': comment[1]}
                     lista.append(message)
 
-            cur.execute("commit")
             return jsonify(lista)
 
         except(Exception, psycopg2.DatabaseError) as error:
@@ -749,9 +729,7 @@ def cancelarLeilao(leilaoId):
         if datafim < datetime.datetime.now() or status:  # ja acabou
             return jsonify({"message": "Auction has ended already."})
 
-        cur.execute("begin")
         cur.execute("update leilao set cancelado = true where leilao.leilaoid = %s", (leilaoId,))
-        cur.execute("commit")
         # Para a notificacao um trigger tem de ser criado par este update no registo do leilao
         return jsonify({"message": "Auction canceled."})
     except(Exception, psycopg2.DatabaseError) as error:
@@ -782,9 +760,7 @@ def banUser(id):
             message = {"code": 403, "message": "You don't have permission to access the data."}
             return jsonify(message)
 
-        cur.execute("begin")
         cur.execute("update pessoa set banned = true where userid = %s", (int(id),))
-        cur.execute("commit")
 
         return jsonify({"code": 200})
 
