@@ -3,7 +3,7 @@ language plpgsql
 as $$
 declare
     c5 cursor for
-    select leilaoid from leilao where leilao.pessoa_userid = userid;
+    select leilaoid from leilao where leilao.pessoa_userid = userid and leilao.cancelado = false;
     c6 cursor for
     select licitacaoid from licitacao where licitacao.pessoa_userid = userid;
 begin

@@ -18,18 +18,12 @@ def token_required(token):
 
 
 @app.before_first_request
-def secreteKeys(filename='DBConfig.ini', section1='Fernet', section2='secret'):
+def secreteKeys(filename='DBConfig.ini',section2='secret'):
     global key
     # create a parser
     parser = ConfigParser()
     # read config file
     parser.read(filename)
-    if parser.has_section(section1):
-        params = parser.items(section1)
-        for param in params:
-            key = param[1].encode()
-    else:
-        raise Exception('Section {0} not found in the {1} file'.format(section1, filename))
     if parser.has_section(section2):
         params = parser.items(section2)
         for param in params:
@@ -163,11 +157,12 @@ def criarLeilao():
             titulo = request.form['titulo']
             descricao = request.form['descricao']
             dataFim = request.form['dataFim']  # data no formato yyyy-mm-dd h:min
-            dataInicio = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+            dataInicio = datetime.datetime.now().strftime("%d-%m-%Y %H:%M")
 
             # agora temos toda a informacao para criar o leilao
             cur.execute(
-                "Insert into leilao(artigoId, precominimo, titulo, descricao, datainicio, datafim, cancelado, pessoa_userid) values(%s, %s, %s, %s, %s, %s, false, %s)",
+                "Insert into leilao(artigoId, precominimo, titulo, descricao, datainicio, datafim, cancelado, "
+                "pessoa_userid) values(%s, %s, %s, %s, %s, %s, false, %s)",
                 (artigoId, precoMinimo, titulo, descricao, dataInicio, dataFim, userId))
             cur.execute("select * from leilao where artigoid = %s", (artigoId,))
             leilaoId = cur.fetchall()[0][0]
@@ -176,6 +171,7 @@ def criarLeilao():
             cur.close()
             conn.commit()
             return jsonify(message)
+
         except(Exception, psycopg2.DatabaseError) as error:
             if isinstance(error, psycopg2.errors.UniqueViolation):
                 message = {"Code": 409, "error": "artigo ja existe na base de dados."}
@@ -204,7 +200,7 @@ def listarLeiloes():
 
             # create a cursor ( a cursor is the command that "talks" with the database")
             cur = conn.cursor()
-            cur.execute("Select leilaoid,descricao from leilao where datafim > current_timestamp")
+            cur.execute("Select leilaoid,descricao from leilao where datafim > current_timestamp and cancelado = false")
             leiloes = cur.fetchall()
             lista = []
             for leilao in leiloes:
@@ -298,14 +294,12 @@ def listarLeiloesKeyword(keyword):
             except(Exception) as error:  # nao e um numero
                 flag = 0
 
-            cur.execute('begin')
             if flag == 1:
                 cur.execute("select leilaoid, descricao from leilao where artigoid = %s or descricao = %s",
                             (keyword, keyword))
             else:
                 cur.execute("select leilaoid, descricao from leilao where descricao = %s", (keyword,))
             leiloes = cur.fetchall()
-            cur.execute('commit')
 
             lei_list = []
             for leilao in leiloes:
@@ -347,7 +341,7 @@ def editarLeilao(leilaoId):
             if userId != pessoa_userId:  # o user nao e o criador do leilao, logo nao o pode alterar
                 cur.close()
                 conn.commit()
-                return jsonify({"erro": "nao e o criador do leilao."})
+                return jsonify({"Code": 403, "erro": "nao e o criador do leilao."})
 
             # assumo que algum deles possa ser uma string vazia
             titulo = request.form['titulo']
@@ -399,7 +393,7 @@ def editarLeilao(leilaoId):
                 # Todo nao sei que codigo colocar aqui, considero que da erro se ambos os parametros forem ""
                 cur.close()
                 conn.commit()
-                message = {"erro": "sem dados para alterar."}
+                message = {"Code": 400, "erro": "sem dados para alterar."}
             return jsonify(message)
         except(Exception, psycopg2.DatabaseError) as error:
             print(error)
@@ -532,32 +526,34 @@ def detalhesLeilao(leilaoid):
             cur.execute("Select * from versao where leilao_leilaoid = %s", (leilaoid,))
             infoVersao = cur.fetchall()
 
-            listInfo = []
-            if infoLeilao[5] > datetime.datetime.utcnow():
+            listInfo = {}
+            if infoLeilao[5] >= datetime.datetime.now():
                 message = {"leilaoId": infoLeilao[0], "precoMinimo": infoLeilao[1], "artigoId": infoLeilao[2],
                            "titulo": infoLeilao[3], "descricao": infoLeilao[4], "dataFim": infoLeilao[5],
                            "cancelado": infoLeilao[6], "dataInicio": infoLeilao[7],
                            "dono": infoLeilao[8]}
-                listInfo.append(message)
+                listInfo["Informacao"] = message
             else:
                 cur.execute("select * from licitacao where leilao_leilaoid = %s and valida = true order by valor DESC", (leilaoid,))
                 vencedor = cur.fetchall()[0]
+                cur.execute("select username from pessoa where userid=%s", (vencedor[4],))
+                nome = cur.fetchall()[0]
                 message = {"leilaoId": infoLeilao[0], "precoMinimo": infoLeilao[1], "artigoId": infoLeilao[2],
                            "titulo": infoLeilao[3], "descricao": infoLeilao[4], "Concluido": "Sim",
                           "dataInicio": infoLeilao[7], "dono": infoLeilao[8], "Vencedor Id": vencedor[0],
-                           "Vencedor Nome": vencedor[1]}
-                listInfo.append(message)
+                           "Vencedor Nome": nome[0]}
+                listInfo["Informacao"] = message
             for licitacao in infoLicitacao:
                 message = {"licitacaoId": licitacao[0], "valor": licitacao[1], "valida": licitacao[2]}
-                listInfo.append(message)
+                listInfo["Licitacoes"] = message
 
             for comment in infoComments:
                 message = {"comentarioId": comment[0], "comentario": comment[1], 'comentadorId': comment[3]}
-                listInfo.append(message)
+                listInfo["Comments"] = message
 
             for versao in infoVersao:
                 message = {"versao": versao[0], "titulo": versao[1], "descricao": versao[2]}
-                listInfo.append(message)
+                listInfo["Versoes"] = message
 
             cur.close()
             conn.commit()
@@ -574,7 +570,7 @@ def detalhesLeilao(leilaoid):
                 print('Database connection closed.')
 
 
-@app.route('/comentário', methods=['POST'])
+@app.route('/comentario', methods=['POST'])
 def comentarLeilao():
     # Copiar isto para saber se o user tem token ou nao
     l, code = token_required(request.args.get('token'))
@@ -784,7 +780,7 @@ def cancelarLeilao(leilaoId):
         admin = cur.fetchall()[0][0]
 
         if not admin:
-            message = {"code": 403, "message": "You don't have permission to access the data."}
+            message = {"code": 403, "error": "You don't have permission to access the data."}
             cur.close()
             conn.commit()
             return jsonify(message)
@@ -798,7 +794,7 @@ def cancelarLeilao(leilaoId):
         if datafim < datetime.datetime.now() or status:  # ja acabou
             cur.close()
             conn.commit()
-            return jsonify({"message": "Auction has ended already."})
+            return jsonify({"Code": 400, "error": "Auction has ended already."})
 
         cur.execute("update leilao set cancelado = true where leilao.leilaoid = %s", (leilaoId,))
         # Para a notificacao um trigger tem de ser criado par este update no registo do leilao
@@ -830,7 +826,7 @@ def banUser(id):
         admin = cur.fetchall()[0][0]
 
         if not admin:
-            message = {"code": 403, "message": "You don't have permission to access the data."}
+            message = {"code": 403, "message": "You don't have permission to ban user."}
             cur.close()
             conn.commit()
             return jsonify(message)
@@ -838,7 +834,7 @@ def banUser(id):
         cur.execute("update pessoa set banned = true where userid = %s", (int(id),))
         cur.close()
         conn.commit()
-        return jsonify({"code": 200})
+        return jsonify({"message": "User Banido"})
 
     except(Exception, psycopg2.DatabaseError) as error:
         print(error)
