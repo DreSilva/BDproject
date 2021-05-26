@@ -1,11 +1,11 @@
 from configparser import ConfigParser
 from flask import Flask, jsonify, request
 import psycopg2
+from psycopg2 import extensions
 import jwt
 import datetime
-
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'Th1s1ss3cr3t'
+key = ''
 
 
 def token_required(token):
@@ -15,6 +15,27 @@ def token_required(token):
         return jwt.decode(token, app.config['SECRET_KEY'], algorithms=["HS256"]), 200
     except:
         return jsonify({'message': 'Token is invalid!'}), 403
+
+
+@app.before_first_request
+def secreteKeys(filename='DBConfig.ini', section1='Fernet', section2='secret'):
+    global key
+    # create a parser
+    parser = ConfigParser()
+    # read config file
+    parser.read(filename)
+    if parser.has_section(section1):
+        params = parser.items(section1)
+        for param in params:
+            key = param[1].encode()
+    else:
+        raise Exception('Section {0} not found in the {1} file'.format(section1, filename))
+    if parser.has_section(section2):
+        params = parser.items(section2)
+        for param in params:
+            app.config['SECRET_KEY'] = param[1]
+    else:
+        raise Exception('Section {0} not found in the {1} file'.format(section2, filename))
 
 
 def getDBConfigs(filename='DBConfig.ini', section='postgresql'):
@@ -38,6 +59,7 @@ def getDBConfigs(filename='DBConfig.ini', section='postgresql'):
 @app.route('/user', methods=['POST'])
 def register():
     conn = None
+    global key
 
     try:
         username = request.form['username']
@@ -50,11 +72,14 @@ def register():
 
         # create a cursor ( a cursor is the command that "talks" with the database")
         cur = conn.cursor()
-        cur.execute("Insert into pessoa(username,email,password,admin,banned) values(%s,%s,%s,false,false )",
+        cur.execute("Insert into pessoa(username,email,password,admin,banned) values(%s,%s,crypt(%s, gen_salt('bf')),false,false )",
                     (username, email, password))
-        cur.execute("Select userid from pessoa where username=%s and password=%s", (username, password))
+        cur.execute("Select userid from pessoa where username=%s and password= crypt(%s, password)", (username, password ))
         id = cur.fetchall()
         message = {"userId": id[0][0]}
+
+        cur.close()
+        conn.commit()
         return message
 
     except (Exception, psycopg2.DatabaseError) as error:
@@ -71,6 +96,7 @@ def register():
 @app.route('/user', methods=['PUT'])
 def login():
     conn = None
+    global key
     try:
         username = request.form['username']
         password = request.form['password']
@@ -78,10 +104,11 @@ def login():
 
         # connect to the PostgreSQL server
         conn = psycopg2.connect(**params)  # creates connection with the data base
+        conn.set_session(readonly=True)
 
         # create a cursor ( a cursor is the command that "talks" with the database")
         cur = conn.cursor()
-        cur.execute("Select * from pessoa where username=%s and password=%s", (username, password))
+        cur.execute("Select * from pessoa where username=%s and password=crypt(%s, password)", (username, password))
         isLogin = cur.fetchall()
         if isLogin:
             if not isLogin[0][5]:
@@ -90,6 +117,7 @@ def login():
                     app.config['SECRET_KEY'], algorithm="HS256")
                 cur.close()
                 conn.commit()
+
                 return jsonify({'token': token})
             else:
                 cur.close()
@@ -146,6 +174,8 @@ def criarLeilao():
             leilaoId = cur.fetchall()[0][0]
 
             message = {"leilaoId": leilaoId}
+            cur.close()
+            conn.commit()
             return jsonify(message)
         except(Exception, psycopg2.DatabaseError) as error:
             if isinstance(error, psycopg2.errors.UniqueViolation):
@@ -171,6 +201,7 @@ def listarLeiloes():
 
             # connect to the PostgreSQL server
             conn = psycopg2.connect(**params)  # creates connection with the data base
+            conn.set_session(readonly=True)
 
             # create a cursor ( a cursor is the command that "talks" with the database")
             cur = conn.cursor()
@@ -180,6 +211,8 @@ def listarLeiloes():
             for leilao in leiloes:
                 message = {"leilaoId": leilao[0], "descricao": leilao[1]}
                 lista.append(message)
+            cur.close()
+            conn.commit()
             return jsonify(lista)
 
         except (Exception, psycopg2.DatabaseError) as error:
@@ -205,6 +238,7 @@ def listarAtividade():
 
             # connect to the PostgreSQL server
             conn = psycopg2.connect(**params)  # creates connection with the data base
+            conn.set_session(readonly=True)
 
             # create a cursor ( a cursor is the command that "talks" with the database")
             cur = conn.cursor()
@@ -232,6 +266,8 @@ def listarAtividade():
                     message = {"leilaoId": leilao[0], "descricao": leilao[1], "Acabado": done, "role": "Licitador"}
                     lista.append(message)
 
+            cur.close()
+            conn.commit()
             return jsonify(lista)
 
         except (Exception, psycopg2.DatabaseError) as error:
@@ -254,6 +290,7 @@ def listarLeiloesKeyword(keyword):
         try:
             params = getDBConfigs()
             conn = psycopg2.connect(**params)
+            conn.set_session(readonly=True)
             cur = conn.cursor()
 
             try:  # se for um numero tanto pode ser um artigoId como algo da descricao, logo pesquisa-se ambos.
@@ -275,7 +312,8 @@ def listarLeiloesKeyword(keyword):
             for leilao in leiloes:
                 message = {'leilaoId': leilao[0], 'descricao': leilao[1]}
                 lei_list.append(message)
-
+            cur.close()
+            conn.commit()
             return jsonify(lei_list)
 
         except(Exception, psycopg2.DatabaseError) as error:
@@ -308,6 +346,8 @@ def editarLeilao(leilaoId):
             pessoa_userId = cur.fetchall()[0][0]
 
             if userId != pessoa_userId:  # o user nao e o criador do leilao, logo nao o pode alterar
+                cur.close()
+                conn.commit()
                 return jsonify({"erro": "nao e o criador do leilao."})
 
             # assumo que algum deles possa ser uma string vazia
@@ -353,9 +393,13 @@ def editarLeilao(leilaoId):
                            "titulo": current_info[3], "descricao": current_info[4], "dataFim": current_info[5],
                            "cancelado": current_info[6], "dataInicio": current_info[7],
                            "pessoa_userId": current_info[8]}
-                cur.execute('commit')
+                cur.close()
+                conn.commit()
+                return jsonify(message)
             else:
                 # Todo nao sei que codigo colocar aqui, considero que da erro se ambos os parametros forem ""
+                cur.close()
+                conn.commit()
                 message = {"erro": "sem dados para alterar."}
             return jsonify(message)
         except(Exception, psycopg2.DatabaseError) as error:
@@ -400,6 +444,8 @@ def criarLicitacao(leilaoid, licitacao):
 
                 if leilao_stats[0][8] == pessoa_userId:
                     message = {"Code": 403, "error": "Não pode votar no seu proprio Leilão"}
+                    cur.close()
+                    conn.commit()
                     return jsonify(message)
 
                 if licitacao_stat:
@@ -407,17 +453,20 @@ def criarLicitacao(leilaoid, licitacao):
 
                     if valor < valorAlto:
                         message = {"Code": 403, "error": "Licitacao mais baixa que a atual. Aumente o valor."}
+                        cur.close()
+                        conn.commit()
                         return jsonify(message)
                     elif valor == valorAlto:
                         message = {"Code": 403, "error": "Licitacao igual à atual. Aumente o valor."}
+                        cur.close()
+                        conn.commit()
                         return jsonify(message)
-                    # else: #TODO Testar isto
-                    # notificacaoLicitacao(pessoa_userId, leilao_leilaoid, valor)
-                    # tem de ser criado um trigger para desempenhar esta funcao
 
                 else:
                     if valor < leilao_stats[0][1]:
                         message = {"Code": 403, "error": "Licitacao mais baixa que o valor minimo"}
+                        cur.close()
+                        conn.commit()
                         return jsonify(message)
 
                 if leilao_stats[0][5] > datetime.datetime.utcnow() and not leilao_stats[0][6]:
@@ -432,12 +481,18 @@ def criarLicitacao(leilaoid, licitacao):
                     licitacaoId = cur.fetchall()[0][0]
 
                     message = {"licitacaoId": licitacaoId}
+                    cur.close()
+                    conn.commit()
                     return jsonify(message)
                 else:
                     message = {"Code": 403, "error": "o leilão já terminou"}
+                    cur.close()
+                    conn.commit()
                     return jsonify(message)
             else:
                 message = {"Code": 403, "error": "o utilizador foi banido."}
+                cur.close()
+                conn.commit()
                 return jsonify(message)
 
         except(Exception, psycopg2.DatabaseError) as error:
@@ -463,6 +518,7 @@ def detalhesLeilao(leilaoid):
         try:
             params = getDBConfigs()
             conn = psycopg2.connect(**params)
+            conn.set_session(readonly=True)
             cur = conn.cursor()
 
             # obter o userId
@@ -504,6 +560,8 @@ def detalhesLeilao(leilaoid):
                 message = {"versao": versao[0], "titulo": versao[1], "descricao": versao[2]}
                 listInfo.append(message)
 
+            cur.close()
+            conn.commit()
             return jsonify(listInfo)
 
         except(Exception, psycopg2.DatabaseError) as error:
@@ -518,7 +576,7 @@ def detalhesLeilao(leilaoid):
 
 
 @app.route('/comentário', methods=['POST'])
-def comentarLeilao():  # TODO testar esta func toda
+def comentarLeilao():
     # Copiar isto para saber se o user tem token ou nao
     l, code = token_required(request.args.get('token'))
     if code == 403:
@@ -549,6 +607,8 @@ def comentarLeilao():  # TODO testar esta func toda
             comentarioId = cur.fetchall()[0][0]
 
             message = {"comentarioid": comentarioId}
+            cur.close()
+            conn.commit()
             return jsonify(message)
         except(Exception, psycopg2.DatabaseError) as error:
             if isinstance(error, psycopg2.errors.UniqueViolation):
@@ -582,6 +642,9 @@ def notificacaoLicitacao(pessoa_userId, leilaoId, value):
             message = "There's been a better bid on the auction number {}, with value {}.".format(leilaoId, value)
             for user in users:
                 cur.execute('insert into notificacao (mensagem, pessoa_userid) values(%s, %s)', (message, user[0]))
+
+        cur.close()
+        conn.commit()
     except(Exception, psycopg2.DatabaseError) as error:
         print(error)
     finally:
@@ -600,6 +663,7 @@ def caixaMensagens():
         try:
             params = getDBConfigs()
             conn = psycopg2.connect(**params)
+            conn.set_session(readonly=True)
             cur = conn.cursor()
             username = l['user']
             cur.execute("Select userid from pessoa where username=%s ", (username,))
@@ -633,7 +697,8 @@ def caixaMensagens():
                 for comment in mural:
                     message = {'tipo': 'Mural Licitador', 'mensagem': comment[1]}
                     lista.append(message)
-
+            cur.close()
+            conn.commit()
             return jsonify(lista)
 
         except(Exception, psycopg2.DatabaseError) as error:
@@ -653,6 +718,7 @@ def estatisticas():
     try:
         params = getDBConfigs()
         conn = psycopg2.connect(**params)
+        conn.set_session(readonly=True, isolation_level=extensions.ISOLATION_LEVEL_REPEATABLE_READ)
         cur = conn.cursor()
         username = l['user']
 
@@ -691,6 +757,8 @@ def estatisticas():
 
         lista.append({"auctions created": number_l})
 
+        cur.close()
+        conn.commit()
         return jsonify(lista)
     except(Exception, psycopg2.DatabaseError) as error:
         print(error)
@@ -718,6 +786,8 @@ def cancelarLeilao(leilaoId):
 
         if not admin:
             message = {"code": 403, "message": "You don't have permission to access the data."}
+            cur.close()
+            conn.commit()
             return jsonify(message)
 
         # verificar se o leilao ja acabou
@@ -727,10 +797,14 @@ def cancelarLeilao(leilaoId):
         status = data[0][1]
 
         if datafim < datetime.datetime.now() or status:  # ja acabou
+            cur.close()
+            conn.commit()
             return jsonify({"message": "Auction has ended already."})
 
         cur.execute("update leilao set cancelado = true where leilao.leilaoid = %s", (leilaoId,))
         # Para a notificacao um trigger tem de ser criado par este update no registo do leilao
+        cur.close()
+        conn.commit()
         return jsonify({"message": "Auction canceled."})
     except(Exception, psycopg2.DatabaseError) as error:
         print(error)
@@ -758,10 +832,13 @@ def banUser(id):
 
         if not admin:
             message = {"code": 403, "message": "You don't have permission to access the data."}
+            cur.close()
+            conn.commit()
             return jsonify(message)
 
         cur.execute("update pessoa set banned = true where userid = %s", (int(id),))
-
+        cur.close()
+        conn.commit()
         return jsonify({"code": 200})
 
     except(Exception, psycopg2.DatabaseError) as error:
@@ -772,7 +849,6 @@ def banUser(id):
             print('Database connection is closed.')
 
 
-# TODO banir user
-
 if __name__ == '__main__':
+    secreteKeys()
     app.run(debug=True)
