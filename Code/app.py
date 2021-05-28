@@ -4,6 +4,7 @@ import psycopg2
 from psycopg2 import extensions
 import jwt
 import datetime
+
 app = Flask(__name__)
 key = ''
 
@@ -18,7 +19,7 @@ def token_required(token):
 
 
 @app.before_first_request
-def secreteKeys(filename='DBConfig.ini',section2='secret'):
+def secreteKeys(filename='DBConfig.ini', section2='secret'):
     global key
     # create a parser
     parser = ConfigParser()
@@ -66,9 +67,11 @@ def register():
 
         # create a cursor ( a cursor is the command that "talks" with the database")
         cur = conn.cursor()
-        cur.execute("Insert into pessoa(username,email,password,admin,banned) values(%s,%s,crypt(%s, gen_salt('bf')),false,false )",
-                    (username, email, password))
-        cur.execute("Select userid from pessoa where username=%s and password= crypt(%s, password)", (username, password ))
+        cur.execute(
+            "Insert into pessoa(username,email,password,admin,banned) values(%s,%s,crypt(%s, gen_salt('bf')),false,false )",
+            (username, email, password))
+        cur.execute("Select userid from pessoa where username=%s and password= crypt(%s, password)",
+                    (username, password))
         id = cur.fetchall()
         message = {"userId": id[0][0]}
 
@@ -158,20 +161,20 @@ def criarLeilao():
             descricao = request.form['descricao']
             dataFim = request.form['dataFim']  # data no formato yyyy-mm-dd h:min
             dataInicio = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
- 
+
             # agora temos toda a informacao para criar o leilao
             cur.execute(
                 "Insert into leilao(artigoId, precominimo, titulo, descricao, datainicio, datafim, cancelado, "
                 "pessoa_userid) values(%s, %s, %s, %s, %s, %s, false, %s)",
                 (artigoId, precoMinimo, titulo, descricao, dataInicio, dataFim, userId))
-            
+
             cur.execute("select * from leilao where artigoid = %s", (artigoId,))
             leilaoId = cur.fetchall()[0][0]
 
             message = {"leilaoId": leilaoId}
             cur.close()
             conn.commit()
-            
+
             return jsonify(message)
 
         except(Exception, psycopg2.DatabaseError) as error:
@@ -536,13 +539,14 @@ def detalhesLeilao(leilaoid):
                            "dono": infoLeilao[8]}
                 listInfo["Informacao"] = message
             else:
-                cur.execute("select * from licitacao where leilao_leilaoid = %s and valida = true order by valor DESC", (leilaoid,))
+                cur.execute("select * from licitacao where leilao_leilaoid = %s and valida = true order by valor DESC",
+                            (leilaoid,))
                 vencedor = cur.fetchall()[0]
                 cur.execute("select username from pessoa where userid=%s", (vencedor[4],))
                 nome = cur.fetchall()[0]
                 message = {"leilaoId": infoLeilao[0], "precoMinimo": infoLeilao[1], "artigoId": infoLeilao[2],
                            "titulo": infoLeilao[3], "descricao": infoLeilao[4], "Concluido": "Sim",
-                          "dataInicio": infoLeilao[7], "dono": infoLeilao[8], "Vencedor Id": vencedor[0],
+                           "dataInicio": infoLeilao[7], "dono": infoLeilao[8], "Vencedor Id": vencedor[0],
                            "Vencedor Nome": nome[0]}
                 listInfo["Informacao"] = message
             for licitacao in infoLicitacao:
@@ -715,7 +719,7 @@ def estatisticas():
     try:
         params = getDBConfigs()
         conn = psycopg2.connect(**params)
-        #conn.set_session(readonly=True, isolation_level=extensions.ISOLATION_LEVEL_REPEATABLE_READ)
+        # conn.set_session(readonly=True, isolation_level=extensions.ISOLATION_LEVEL_REPEATABLE_READ)
         cur = conn.cursor()
         username = l['user']
 
@@ -734,7 +738,8 @@ def estatisticas():
         cur.execute('begin')
         cur.execute('call updateauctionwinners()')
         cur.execute('commit')
-        cur.execute("select leilao.vencedor from leilao where leilao.vencedor is not null group by leilao.vencedor order by count(leilao.vencedor) desc limit 10")
+        cur.execute(
+            "select leilao.vencedor from leilao where leilao.vencedor is not null group by leilao.vencedor order by count(leilao.vencedor) desc limit 10")
         top_won_l = cur.fetchall()
         print(top_won_l)
 
@@ -835,7 +840,7 @@ def banUser(id):
             cur.close()
             conn.commit()
             return jsonify(message)
-        #verificar se o user ja foi banido
+        # verificar se o user ja foi banido
         cur.execute('select pessoa.banned from pessoa where pessoa.userid = %s', (id,))
         banned = cur.fetchall()[0][0]
         if not banned:
@@ -844,6 +849,46 @@ def banUser(id):
             conn.commit()
             return jsonify({"message": "User Banido"})
         return jsonify({"message": "User already banned."})
+
+    except(Exception, psycopg2.DatabaseError) as error:
+        print(error)
+    finally:
+        if conn:
+            conn.close()
+            print('Database connection is closed.')
+
+
+@app.route('/terminarleiloes', methods=['POST'])
+def terminarLeiloes():
+    l, code = token_required(request.args.get('token'))
+    if code == 403:
+        return l
+    conn = None
+    try:
+        params = getDBConfigs()
+        conn = psycopg2.connect(**params)
+        cur = conn.cursor()
+        username = l['user']
+
+        cur.execute("Select * from leilao")
+        leilao_stats = cur.fetchall()
+
+        for i in range(len(leilao_stats)):
+            if leilao_stats[i][5] > datetime.datetime.utcnow() and not leilao_stats[i][6]:
+                cur.execute("update leilao set terminado = true where leilaoid = %s", (leilao_stats[i][0],))
+
+                cur.execute("select * from licitacao where leilao_leilaoid = %s order by valor desc",
+                            (leilao_stats[i][0],))
+                melhor_licitacao = cur.fetchall()[0]
+
+                cur.execute("update leilao set vencedor = %s where leilaoid = %s",
+                            (melhor_licitacao[4], leilao_stats[i][0]))
+
+        message = {"Code": 200, "message": "success"}
+        cur.close()
+        conn.commit()
+        return jsonify(message)
+
 
     except(Exception, psycopg2.DatabaseError) as error:
         print(error)
