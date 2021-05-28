@@ -1,5 +1,5 @@
 from configparser import ConfigParser
-from flask import Flask, jsonify, request
+from flask import Flask, json, jsonify, request
 import psycopg2
 from psycopg2 import extensions
 import jwt
@@ -157,19 +157,21 @@ def criarLeilao():
             titulo = request.form['titulo']
             descricao = request.form['descricao']
             dataFim = request.form['dataFim']  # data no formato yyyy-mm-dd h:min
-            dataInicio = datetime.datetime.now().strftime("%d-%m-%Y %H:%M")
-
+            dataInicio = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+ 
             # agora temos toda a informacao para criar o leilao
             cur.execute(
                 "Insert into leilao(artigoId, precominimo, titulo, descricao, datainicio, datafim, cancelado, "
                 "pessoa_userid) values(%s, %s, %s, %s, %s, %s, false, %s)",
                 (artigoId, precoMinimo, titulo, descricao, dataInicio, dataFim, userId))
+            
             cur.execute("select * from leilao where artigoid = %s", (artigoId,))
             leilaoId = cur.fetchall()[0][0]
 
             message = {"leilaoId": leilaoId}
             cur.close()
             conn.commit()
+            
             return jsonify(message)
 
         except(Exception, psycopg2.DatabaseError) as error:
@@ -461,7 +463,7 @@ def criarLicitacao(leilaoid, licitacao):
                         cur.close()
                         conn.commit()
                         return jsonify(message)
-
+                print(leilao_stats[0][5])
                 if leilao_stats[0][5] > datetime.datetime.utcnow() and not leilao_stats[0][6]:
                     # agora temos toda a informacao para criar o licitação
 
@@ -713,7 +715,7 @@ def estatisticas():
     try:
         params = getDBConfigs()
         conn = psycopg2.connect(**params)
-        conn.set_session(readonly=True, isolation_level=extensions.ISOLATION_LEVEL_REPEATABLE_READ)
+        #conn.set_session(readonly=True, isolation_level=extensions.ISOLATION_LEVEL_REPEATABLE_READ)
         cur = conn.cursor()
         username = l['user']
 
@@ -726,12 +728,15 @@ def estatisticas():
             return jsonify(message)
 
         cur.execute(
-            "select leilao.pessoa_userid from leilao group by leilao.pessoa_userid order by count(leilao.pessoa_userid) desc")
+            "select leilao.pessoa_userid from leilao group by leilao.pessoa_userid order by count(leilao.pessoa_userid) desc limit 10")
         top_created_l = cur.fetchall()
 
-        cur.execute(
-            "select licitacao.pessoa_userid from licitacao group by licitacao.pessoa_userid order by count(licitacao.pessoa_userid) desc")
+        cur.execute('begin')
+        cur.execute('call updateauctionwinners()')
+        cur.execute('commit')
+        cur.execute("select leilao.vencedor from leilao where leilao.vencedor is not null group by leilao.vencedor order by count(leilao.vencedor) desc limit 10")
         top_won_l = cur.fetchall()
+        print(top_won_l)
 
         time_delta = datetime.timedelta(days=10)
         current_date_minus_10 = (datetime.datetime.now() - time_delta).strftime("%Y-%m-%d %H:%M")
@@ -741,12 +746,12 @@ def estatisticas():
         lista = []
 
         temp = []
-        for i in range(min(10, len(top_created_l))):
+        for i in range(len(top_created_l)):
             temp.append(top_created_l[i][0])
         lista.append({"Top auction creaters": temp})
 
         temp = []
-        for i in range(min(10, len(top_won_l))):
+        for i in range(len(top_won_l)):
             temp.append(top_won_l[i][0])
         lista.append({"Top auction winners": temp})
 
@@ -830,11 +835,15 @@ def banUser(id):
             cur.close()
             conn.commit()
             return jsonify(message)
-
-        cur.execute("update pessoa set banned = true where userid = %s", (int(id),))
-        cur.close()
-        conn.commit()
-        return jsonify({"message": "User Banido"})
+        #verificar se o user ja foi banido
+        cur.execute('select pessoa.banned from pessoa where pessoa.userid = %s', (id,))
+        banned = cur.fetchall()[0][0]
+        if not banned:
+            cur.execute("update pessoa set banned = true where userid = %s", (int(id),))
+            cur.close()
+            conn.commit()
+            return jsonify({"message": "User Banido"})
+        return jsonify({"message": "User already banned."})
 
     except(Exception, psycopg2.DatabaseError) as error:
         print(error)

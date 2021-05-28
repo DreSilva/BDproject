@@ -7,8 +7,12 @@ declare
 begin
     for elem in c1
     loop
+        --enviar notificacao aos interessados no leilao
         insert into notificacao (pessoa_userid, mensagem) values(elem.pessoa_userid, 'The auction number ' || leilaoId || ' has been canceled by an admin.');
     end loop;
+
+    --invalidar as licitacoes feitas neste leilao
+    update licitacao set valida = false where licitacao.leilao_leilaoid = leilaoId;
 
 end;
 $$;
