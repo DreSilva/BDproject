@@ -114,7 +114,7 @@ def login():
                     app.config['SECRET_KEY'], algorithm="HS256")
                 cur.close()
                 conn.commit()
-                return jsonify({'token': token})
+                return jsonify({'authToken': token})
             else:
                 cur.close()
                 conn.commit()
@@ -165,7 +165,7 @@ def criarLeilao():
             # agora temos toda a informacao para criar o leilao
             cur.execute(
                 "Insert into leilao(artigoId, precominimo, titulo, descricao, datainicio, datafim, cancelado, "
-                "pessoa_userid) values(%s, %s, %s, %s, %s, %s, false, %s)",
+                "pessoa_userid,vencedor) values(%s, %s, %s, %s, %s, %s, false, %s, null)",
                 (artigoId, precoMinimo, titulo, descricao, dataInicio, dataFim, userId))
 
             cur.execute("select * from leilao where artigoid = %s", (artigoId,))
@@ -205,7 +205,7 @@ def listarLeiloes():
 
             # create a cursor ( a cursor is the command that "talks" with the database")
             cur = conn.cursor()
-            cur.execute("Select leilaoid,descricao from leilao where datafim > current_timestamp and cancelado = false")
+            cur.execute("Select leilaoid,descricao from leilao where terminado=false and cancelado = false")
             leiloes = cur.fetchall()
             lista = []
             for leilao in leiloes:
@@ -532,7 +532,7 @@ def detalhesLeilao(leilaoid):
             infoVersao = cur.fetchall()
 
             listInfo = {}
-            if infoLeilao[5] >= datetime.datetime.now():
+            if not infoLeilao[8]:
                 message = {"leilaoId": infoLeilao[0], "precoMinimo": infoLeilao[1], "artigoId": infoLeilao[2],
                            "titulo": infoLeilao[3], "descricao": infoLeilao[4], "dataFim": infoLeilao[5],
                            "cancelado": infoLeilao[6], "dataInicio": infoLeilao[7],
@@ -879,17 +879,17 @@ def terminarLeiloes():
 
                 cur.execute("select * from licitacao where leilao_leilaoid = %s order by valor desc",
                             (leilao_stats[i][0],))
-                melhor_licitacao = cur.fetchall()[0]
+                melhor_licitacao = cur.fetchall()
+                if melhor_licitacao:
+                    melhor_licitacao = melhor_licitacao[0]
 
-                cur.execute("update leilao set vencedor = %s where leilaoid = %s",
-                            (melhor_licitacao[4], leilao_stats[i][0]))
+                    cur.execute("update leilao set vencedor = %s where leilaoid = %s",
+                                (melhor_licitacao[4], leilao_stats[i][0]))
 
         message = {"Code": 200, "message": "success "}
         cur.close()
         conn.commit()
         return jsonify(message)
-
-
     except(Exception, psycopg2.DatabaseError) as error:
         print(error)
     finally:
