@@ -884,7 +884,7 @@ def terminarLeiloes():
                 cur.execute("update leilao set vencedor = %s where leilaoid = %s",
                             (melhor_licitacao[4], leilao_stats[i][0]))
 
-        message = {"Code": 200, "message": "success"}
+        message = {"Code": 200, "message": "success "}
         cur.close()
         conn.commit()
         return jsonify(message)
