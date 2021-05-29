@@ -341,7 +341,11 @@ def editarLeilao(leilaoId):
             userId = cur.fetchall()[0][0]
 
             cur.execute("select pessoa_userid,terminado from leilao where leilaoid = %s", (leilaoId,))
-            pessoa_userId = cur.fetchall()[0]
+            pessoa_userId = cur.fetchall()
+            if not pessoa_userId:
+                return jsonify({"Code": 404, "erro": "Leilao não existe"})
+
+            pessoa_userId = pessoa_userId[0]
             terminado = pessoa_userId[1]
             pessoa_userId = pessoa_userId[0]
 
@@ -349,7 +353,6 @@ def editarLeilao(leilaoId):
                 cur.close()
                 conn.commit()
                 return jsonify({"Code": 403, "erro": "Leilao terminado não pode alterar"})
-
 
             if userId != pessoa_userId:  # o user nao e o criador do leilao, logo nao o pode alterar
                 cur.close()
@@ -442,12 +445,14 @@ def criarLicitacao(leilaoid, licitacao):
 
                 cur.execute("Select * from leilao where leilaoid=%s", (leilao_leilaoid,))
                 leilao_stats = cur.fetchall()
+                if not leilao_stats:
+                    return jsonify({"Code": 404, "erro": "Leilao não existe"})
                 cur.execute("Select * from licitacao where leilao_leilaoid = %s order by valor DESC",
                             (leilao_leilaoid,))
 
                 licitacao_stat = cur.fetchall()
 
-                if leilao_stats[0][8] == pessoa_userId:
+                if leilao_stats[0][9] == pessoa_userId:
                     message = {"Code": 403, "error": "Não pode licitar no seu proprio Leilão"}
                     cur.close()
                     conn.commit()
@@ -530,7 +535,10 @@ def detalhesLeilao(leilaoid):
             username = l['user']  # usar para ir buscar os userid
 
             cur.execute("Select * from leilao where leilaoid = %s", (leilaoid,))
-            infoLeilao = cur.fetchall()[0]
+            infoLeilao = cur.fetchall()
+            if not infoLeilao:
+                return jsonify({"Code": 404, "erro": "Leilao não existe"})
+            infoLeilao = infoLeilao[0]
             cur.execute("Select * from licitacao where leilao_leilaoid = %s order by valor DESC", (leilaoid,))
             infoLicitacao = cur.fetchall()
             cur.execute("Select * from comentario where leilao_leilaoid = %s", (leilaoid,))
@@ -543,18 +551,14 @@ def detalhesLeilao(leilaoid):
                 message = {"leilaoId": infoLeilao[0], "precoMinimo": infoLeilao[1], "artigoId": infoLeilao[2],
                            "titulo": infoLeilao[3], "descricao": infoLeilao[4], "dataFim": infoLeilao[5],
                            "cancelado": infoLeilao[6], "dataInicio": infoLeilao[7],
-                           "dono": infoLeilao[8]}
+                           "dono": infoLeilao[9]}
                 listInfo["Informacao"] = message
             else:
-                cur.execute("select * from licitacao where leilao_leilaoid = %s and valida = true order by valor DESC",
-                            (leilaoid,))
-                vencedor = cur.fetchall()[0]
-                cur.execute("select username from pessoa where userid=%s", (vencedor[4],))
+
                 nome = cur.fetchall()[0]
                 message = {"leilaoId": infoLeilao[0], "precoMinimo": infoLeilao[1], "artigoId": infoLeilao[2],
                            "titulo": infoLeilao[3], "descricao": infoLeilao[4], "Concluido": "Sim",
-                           "dataInicio": infoLeilao[7], "dono": infoLeilao[8], "Vencedor Id": vencedor[0],
-                           "Vencedor Nome": nome[0]}
+                           "dataInicio": infoLeilao[7], "dono": infoLeilao[9], "Vencedor Id": infoLeilao[8]}
                 listInfo["Informacao"] = message
             for licitacao in infoLicitacao:
                 message = {"licitacaoId": licitacao[0], "valor": licitacao[1], "valida": licitacao[2]}
@@ -770,6 +774,8 @@ def cancelarLeilao(leilaoId):
         # verificar se o leilao ja acabou
         cur.execute("select datafim, cancelado from leilao where leilaoid = %s", (leilaoId,))
         data = cur.fetchall()
+        if not data:
+            return jsonify({"Code": 404, "erro": "Leilao não existe"})
         datafim = data[0][0]
         status = data[0][1]
 
