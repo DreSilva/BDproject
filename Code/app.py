@@ -340,8 +340,16 @@ def editarLeilao(leilaoId):
             cur.execute("select userid from pessoa where username = %s", (username,))
             userId = cur.fetchall()[0][0]
 
-            cur.execute("select pessoa_userid from leilao where leilaoid = %s", (leilaoId,))
-            pessoa_userId = cur.fetchall()[0][0]
+            cur.execute("select pessoa_userid,terminado from leilao where leilaoid = %s", (leilaoId,))
+            pessoa_userId = cur.fetchall()[0]
+            terminado = pessoa_userId[1]
+            pessoa_userId = pessoa_userId[0]
+
+            if terminado:
+                cur.close()
+                conn.commit()
+                return jsonify({"Code": 403, "erro": "Leilao terminado não pode alterar"})
+
 
             if userId != pessoa_userId:  # o user nao e o criador do leilao, logo nao o pode alterar
                 cur.close()
@@ -395,7 +403,6 @@ def editarLeilao(leilaoId):
                 conn.commit()
                 return jsonify(message)
             else:
-                # Todo nao sei que codigo colocar aqui, considero que da erro se ambos os parametros forem ""
                 cur.close()
                 conn.commit()
                 message = {"Code": 400, "erro": "sem dados para alterar."}
@@ -467,7 +474,7 @@ def criarLicitacao(leilaoid, licitacao):
                         conn.commit()
                         return jsonify(message)
                 print(leilao_stats[0][5])
-                if leilao_stats[0][5] > datetime.datetime.utcnow() and not leilao_stats[0][6]:
+                if not leilao_stats[0][8] and not leilao_stats[0][6]:
                     # agora temos toda a informacao para criar o licitação
 
                     cur.execute(
@@ -719,7 +726,7 @@ def estatisticas():
     try:
         params = getDBConfigs()
         conn = psycopg2.connect(**params)
-        # conn.set_session(readonly=True, isolation_level=extensions.ISOLATION_LEVEL_REPEATABLE_READ)
+        conn.set_session(readonly=True, isolation_level=extensions.ISOLATION_LEVEL_REPEATABLE_READ)
         cur = conn.cursor()
         username = l['user']
 
@@ -735,9 +742,6 @@ def estatisticas():
             "select leilao.pessoa_userid from leilao group by leilao.pessoa_userid order by count(leilao.pessoa_userid) desc limit 10")
         top_created_l = cur.fetchall()
 
-        cur.execute('begin')
-        cur.execute('call updateauctionwinners()')
-        cur.execute('commit')
         cur.execute(
             "select leilao.vencedor from leilao where leilao.vencedor is not null group by leilao.vencedor order by count(leilao.vencedor) desc limit 10")
         top_won_l = cur.fetchall()
@@ -868,23 +872,8 @@ def terminarLeiloes():
         params = getDBConfigs()
         conn = psycopg2.connect(**params)
         cur = conn.cursor()
-        username = l['user']
 
-        cur.execute("Select * from leilao")
-        leilao_stats = cur.fetchall()
-
-        for i in range(len(leilao_stats)):
-            if leilao_stats[i][5] > datetime.datetime.utcnow() and not leilao_stats[i][6]:
-                cur.execute("update leilao set terminado = true where leilaoid = %s", (leilao_stats[i][0],))
-
-                cur.execute("select * from licitacao where leilao_leilaoid = %s order by valor desc",
-                            (leilao_stats[i][0],))
-                melhor_licitacao = cur.fetchall()
-                if melhor_licitacao:
-                    melhor_licitacao = melhor_licitacao[0]
-
-                    cur.execute("update leilao set vencedor = %s where leilaoid = %s",
-                                (melhor_licitacao[4], leilao_stats[i][0]))
+        cur.execute('call updateauctionwinners()')
 
         message = {"Code": 200, "message": "success "}
         cur.close()
@@ -900,4 +889,4 @@ def terminarLeiloes():
 
 if __name__ == '__main__':
     secreteKeys()
-    app.run(debug=True)
+    app.run(port=8080, debug=True)
