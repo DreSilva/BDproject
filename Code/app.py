@@ -629,38 +629,6 @@ def comentarLeilao():
                 print('Database connection closed.')
 
 
-def notificacaoLicitacao(pessoa_userId, leilaoId, value):
-    # pessoa_userId -> id de quem fez a licitacao
-    # leilaoId -> leilao no qual a licitacao foi efetuada
-    # value -> valor da licitacao
-
-    conn = None
-    try:
-        params = getDBConfigs()
-        conn = psycopg2.connect(**params)
-        cur = conn.cursor()
-
-        # obter as pessoas que licitaram no leilao
-        cur.execute("select distinct pessoa_userid from licitacao where leilao_leilaoid = %s and pessoa_userid <> %s",
-                    (leilaoId, pessoa_userId))
-        users = cur.fetchall()
-        print(users)
-        if users != []:  # houve licitacoes no leilao(sem ser a do user atual)
-            # mandar a notificacao
-            message = "There's been a better bid on the auction number {}, with value {}.".format(leilaoId, value)
-            for user in users:
-                cur.execute('insert into notificacao (mensagem, pessoa_userid) values(%s, %s)', (message, user[0]))
-
-        cur.close()
-        conn.commit()
-    except(Exception, psycopg2.DatabaseError) as error:
-        print(error)
-    finally:
-        if conn:
-            conn.close()
-            print('Database connection is closed.')
-
-
 @app.route('/caixamensagens', methods=['GET'])
 def caixaMensagens():
     l, code = token_required(request.args.get('token'))
@@ -777,7 +745,7 @@ def estatisticas():
             print('Database connection is closed.')
 
 
-@app.route('/cancelAuction/<leilaoId>', methods=['GET'])
+@app.route('/cancelAuction/<leilaoId>', methods=['PUT'])
 def cancelarLeilao(leilaoId):
     l, code = token_required(request.args.get('token'))
     if code == 403:
@@ -823,7 +791,7 @@ def cancelarLeilao(leilaoId):
             print('Database connection is closed.')
 
 
-@app.route('/ban/<id>', methods=['POST'])
+@app.route('/ban/<id>', methods=['PUT'])
 def banUser(id):
     l, code = token_required(request.args.get('token'))
     if code == 403:
@@ -862,7 +830,7 @@ def banUser(id):
             print('Database connection is closed.')
 
 
-@app.route('/terminarleiloes', methods=['POST'])
+@app.route('/terminarleiloes', methods=['PUT'])
 def terminarLeiloes():
     l, code = token_required(request.args.get('token'))
     if code == 403:
